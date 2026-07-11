@@ -1,0 +1,17 @@
+{% extends "_layout.html" %}
+{% block heading %}编辑成员{% endblock %}
+{% set active = 'members' %}
+{% block content %}
+<div class="panel" style="max-width: 520px;">
+  <h3 class="panel-title">编辑 {{ m.name }}</h3>
+  <form method="post" action="/web/members/{{ m.id }}/edit" class="form">
+    <label class="field"><span>姓名</span><input name="name" required value="{{ m.name }}" /></label>
+    <label class="field"><span>年级</span><input type="number" name="grade" min="1" max="12" value="{{ m.grade or 4 }}" /></label>
+    <label class="field"><span>Windows 用户名</span><input name="windows_username" placeholder="kid01" value="{{ m.windows_username or '' }}" /></label>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存</button>
+      <a href="/web/members" class="btn">取消</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

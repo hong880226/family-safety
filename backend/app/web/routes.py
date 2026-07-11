@@ -274,6 +274,73 @@ async def members_add(
     return RedirectResponse("/web/members", status_code=302)
 
 
+@router.get("/members/{member_id}/edit", response_class=HTMLResponse)
+async def members_edit_get(
+    member_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Member).where(
+        Member.id == member_id,
+        Member.family_id == parent.family_id,
+    )
+    target = (await db.execute(stmt)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="member not found")
+    return templates.TemplateResponse(
+        request,
+        "member_edit.html",
+        {
+            "request": request, "m": target, "version": _app_version(),
+            "csrf_token": issue_csrf_token(request),
+        },
+    )
+
+
+@router.post("/members/{member_id}/edit")
+async def members_edit_post(
+    member_id: int,
+    request: Request,
+    form: MemberForm = Depends(),
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    await validate_csrf_or_raise(request)
+    stmt = select(Member).where(
+        Member.id == member_id,
+        Member.family_id == parent.family_id,
+    )
+    target = (await db.execute(stmt)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="member not found")
+    target.name = form.name
+    target.grade = form.grade
+    target.windows_username = form.windows_username or None
+    await db.commit()
+    return RedirectResponse("/web/members", status_code=302)
+
+
+@router.post("/members/{member_id}/delete")
+async def members_delete(
+    member_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    await validate_csrf_or_raise(request)
+    stmt = select(Member).where(
+        Member.id == member_id,
+        Member.family_id == parent.family_id,
+        Member.role == MemberRole.CHILD,
+    )
+    target = (await db.execute(stmt)).scalar_one_or_none()
+    if target:
+        await db.delete(target)
+        await db.commit()
+    return RedirectResponse("/web/members", status_code=302)
+
+
 @router.get("/devices", response_class=HTMLResponse)
 async def devices_page(
     request: Request,

@@ -14,7 +14,15 @@
           <td>{% if m.role=='parent' %}家长{% else %}孩子{% endif %}</td>
           <td>{{ m.grade or '—' }}</td>
           <td><code>{{ m.windows_username or '—' }}</code></td>
-          <td><a href="/web/members/{{ m.id }}/edit" class="btn btn-sm">编辑</a></td>
+          <td class="row-actions">
+            <a href="/web/members/{{ m.id }}/edit" class="btn btn-sm">编辑</a>
+            {% if m.role != 'parent' %}
+            <form method="post" action="/web/members/{{ m.id }}/delete" class="inline-form"
+                  onsubmit="return confirm('确定删除成员 {{ m.name }} 吗?');">
+              <button type="submit" class="btn btn-sm btn-danger">删除</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
