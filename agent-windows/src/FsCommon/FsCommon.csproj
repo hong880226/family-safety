@@ -5,6 +5,11 @@
     <LangVersion>12.0</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Enables the parent password dialog (ParentPasswordDialog.cs). All
+         projects referencing FsCommon inherit WindowsForms; service-only
+         consumers (FsWatchdogService) never instantiate the dialog but do
+         pull in the assembly reference harmlessly. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>

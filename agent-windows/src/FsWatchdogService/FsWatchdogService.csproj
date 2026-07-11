@@ -4,7 +4,6 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWindowsForms>false</UseWindowsForms>
     <RootNamespace>FsWatchdogService</RootNamespace>
     <AssemblyName>FsWatchdogService</AssemblyName>
     <Platforms>AnyCPU;x64</Platforms>

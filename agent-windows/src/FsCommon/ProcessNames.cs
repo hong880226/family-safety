@@ -22,6 +22,14 @@ public static class ProcessNames
     public const string WatchdogPipe = "FsWatchdog_Pipe";
 
     /// <summary>
+    /// Named pipe for parent-facing control messages (e.g. graceful_stop) sent
+    /// to the running FsWatchdogService from FsTray / FsConfigUI / CLI. Kept
+    /// separate from <see cref="WatchdogPipe"/> which carries child→watchdog
+    /// liveness traffic.
+    /// </summary>
+    public const string WatchdogControlPipe = "FsWatchdog_Ctrl_Pipe";
+
+    /// <summary>
     /// Shared memory segment for monitor->agent IPC.
     /// </summary>
     public const string SharedMemName = "FsShared_State";

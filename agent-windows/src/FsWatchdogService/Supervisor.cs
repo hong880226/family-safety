@@ -1,6 +1,10 @@
 using FsCommon;
 using Microsoft.Extensions.Hosting;
 using System.Diagnostics;
+using System.IO.Pipes;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace FsWatchdogService;
 
@@ -22,6 +26,14 @@ internal sealed class Supervisor : BackgroundService
 
     private readonly CancellationTokenSource _stopping = new();
     private readonly Dictionary<string, Process> _children = new(StringComparer.OrdinalIgnoreCase);
+    private Task? _controlListenerTask;
+
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        Logger.Info(ProcessNames.Watchdog, "StartAsync: spawning control pipe listener");
+        _controlListenerTask = Task.Run(() => ListenForControlCommands(_stopping.Token));
+        return base.StartAsync(cancellationToken);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -92,21 +104,58 @@ internal sealed class Supervisor : BackgroundService
         Program.WriteEventLog(EventLogEntryType.Information, Program.EventIdStopping,
             "FamilySafety watchdog stopping; terminating child processes.");
 
-        _stopping.Cancel();
+        await TearDownChildrenAsync();
 
+        await base.StopAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Parent-password-authenticated orderly shutdown. Invoked when FsTray /
+    /// FsConfigUI / CLI sends a graceful_stop message on the control pipe.
+    /// Tries to close child main windows cleanly first, then escalates to
+    /// Kill after 5s. Removes agent.alive so any later relauncher knows we
+    /// left on purpose (not crashed).
+    /// </summary>
+    public Task GracefulStopAsync()
+    {
+        Logger.Info(ProcessNames.Watchdog, "GracefulStopAsync: requested by parent UI");
+        Program.WriteEventLog(EventLogEntryType.Information, Program.EventIdStopping,
+            "FamilySafety: graceful_stop via parent-password auth.");
+
+        // Cancel the watch loop so ExecuteAsync returns, then run the
+        // standard BackgroundService shutdown path which also calls our
+        // (now refactored) StopAsync to tear down children.
+        _stopping.Cancel();
+        return base.StopAsync(CancellationToken.None);
+    }
+
+    private async Task TearDownChildrenAsync()
+    {
         foreach (var (name, proc) in _children)
         {
             try
             {
                 if (proc != null && !proc.HasExited)
                 {
-                    proc.Kill(entireProcessTree: true);
-                    Logger.Info(ProcessNames.Watchdog, $"Killed {name} (pid {proc.Id})");
+                    try { proc.CloseMainWindow(); }
+                    catch { /* process may not have a main window */ }
+
+                    if (!proc.WaitForExit(5000))
+                    {
+                        proc.Kill(entireProcessTree: true);
+                        Logger.Info(ProcessNames.Watchdog,
+                            $"Killed {name} (pid {proc.Id}) after 5s grace");
+                    }
+                    else
+                    {
+                        Logger.Info(ProcessNames.Watchdog,
+                            $"{name} (pid {proc.Id}) closed cleanly");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Logger.Warn(ProcessNames.Watchdog, $"Kill {name} failed: {ex.Message}");
+                Logger.Warn(ProcessNames.Watchdog, $"Stop {name} failed: {ex.Message}");
             }
         }
 
@@ -123,7 +172,113 @@ internal sealed class Supervisor : BackgroundService
             catch { /* ignore */ }
         }
 
-        await base.StopAsync(cancellationToken);
+        // Remove the liveness file so a later session can tell we exited cleanly.
+        try
+        {
+            var aliveFile = Path.Combine(AgentConfig.ConfigDir, "agent.alive");
+            if (File.Exists(aliveFile)) File.Delete(aliveFile);
+        }
+        catch { /* best-effort */ }
+    }
+
+    /// <summary>
+    /// Background loop that listens on <see cref="ProcessNames.WatchdogControlPipe"/>
+    /// for parent-issued commands. Currently only graceful_stop is supported.
+    /// Spawned once in <see cref="StartAsync"/>.
+    /// </summary>
+    private async Task ListenForControlCommands(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                using var server = new NamedPipeServerStream(
+                    ProcessNames.WatchdogControlPipe,
+                    PipeDirection.In,
+                    maxNumberOfServerInstances: 1,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous);
+
+                await server.WaitForConnectionAsync(ct);
+                using var reader = new StreamReader(server, Encoding.UTF8);
+                var line = await reader.ReadLineAsync(ct);
+                if (line == null) continue;
+
+                HandleControlMessage(line);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                Logger.Warn(ProcessNames.Watchdog,
+                    $"Control pipe listener error: {ex.Message}");
+                try { await Task.Delay(500, ct); } catch { break; }
+            }
+        }
+    }
+
+    private void HandleControlMessage(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeProp)) return;
+            var type = typeProp.GetString();
+            switch (type)
+            {
+                case "graceful_stop":
+                    if (VerifyControlAuth(root))
+                    {
+                        Logger.Info(ProcessNames.Watchdog,
+                            "Received graceful_stop from parent UI (auth ok)");
+                        _ = GracefulStopAsync();
+                    }
+                    else
+                    {
+                        Logger.Warn(ProcessNames.Watchdog,
+                            "graceful_stop received but parent-password hash did not match");
+                    }
+                    break;
+                default:
+                    Logger.Warn(ProcessNames.Watchdog,
+                        $"Unknown control message type '{type}'");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ProcessNames.Watchdog,
+                $"Bad control message: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static bool VerifyControlAuth(JsonElement root)
+    {
+        try
+        {
+            if (!root.TryGetProperty("password_hash", out var hashProp) ||
+                !root.TryGetProperty("salt", out var saltProp) ||
+                !root.TryGetProperty("iterations", out var iterProp))
+            {
+                return false;
+            }
+            var stored = ParentAuth.ExportForSync();
+            if (stored == null) return false;
+
+            // The caller derived PBKDF2 from the entered plaintext using
+            // (salt, iter) — same as us. Constant-time compare against the
+            // hash we have on disk.
+            var supplied = Convert.FromBase64String(hashProp.GetString() ?? "");
+            var expected = Convert.FromBase64String(stored.HashBase64);
+            return supplied.Length == expected.Length &&
+                   CryptographicOperations.FixedTimeEquals(supplied, expected);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ProcessNames.Watchdog,
+                $"VerifyControlAuth failed: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
     }
 
     private void LaunchIfMissing(string name, TimeSpan delay, CancellationToken ct)

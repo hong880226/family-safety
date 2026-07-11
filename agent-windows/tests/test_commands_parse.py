@@ -58,6 +58,9 @@ EXPECTED_COMMAND_PAYLOAD_FIELDS = {
     "reboot": {"delay_seconds", "message"},
     "force_quiz": {"reason"},
     "show_warning": {"message"},
+    # PR-D: agent-side capture command. Backend never issues this; it's the
+    # contract we expect when PR-E wires the parent-side trigger.
+    "capture_screen": {"trigger_type"},
 }
 
 ALL_KNOWN_COMMAND_TYPES = set(EXPECTED_COMMAND_PAYLOAD_FIELDS.keys())

@@ -9,6 +9,16 @@ internal static class Program
     {
         Logger.Init(ProcessNames.Tray);
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
+
+        // --notify-screenshot: pop a balloon and exit. Used by FsAgent just
+        // before it captures the screen (PR-D screenshot flow).
+        if (args.Length > 0 &&
+            string.Equals(args[0], "--notify-screenshot", StringComparison.OrdinalIgnoreCase))
+        {
+            new TrayApp().ShowScreenshotNotification();
+            return 0;
+        }
+
         Application.Run(new TrayApp());
         return 0;
     }
@@ -39,6 +49,27 @@ public sealed class TrayApp : ApplicationContext
         _tray.ContextMenuStrip = menu;
         _tray.DoubleClick += (s, e) => OpenDashboard();
         Logger.Info(ProcessNames.Tray, "Tray app running");
+    }
+
+    /// <summary>
+    /// Pop a one-shot balloon telling the user "家长正在查看你的桌面".
+    /// Invoked by FsAgent (PR-D) just before it captures the primary screen,
+    /// so the child always sees a heads-up before the shutter fires.
+    /// </summary>
+    public void ShowScreenshotNotification()
+    {
+        using var balloon = new NotifyIcon
+        {
+            Icon = SystemIcons.Information,
+            Visible = true,
+            BalloonTipTitle = "FamilySafety",
+            BalloonTipText = "家长正在查看你的桌面",
+            BalloonTipIcon = ToolTipIcon.Info,
+        };
+        balloon.ShowBalloonTip(5000);
+        // Give the balloon time to render before the host process exits.
+        System.Threading.Thread.Sleep(2500);
+        Logger.Info(ProcessNames.Tray, "Screenshot notification shown");
     }
 
     private void OpenDashboard()
@@ -94,8 +125,13 @@ public sealed class TrayApp : ApplicationContext
     private void RequestExitWithAuth()
     {
         // Three lines a kid can't bypass: require the parent password BEFORE
-        // we even attempt sc stop. Auth failure just denies; never exposes
-        // whether the service is running.
+        // we even attempt to talk to the watchdog. Auth failure just denies;
+        // never exposes whether the service is running.
+        //
+        // PR-D: replaced the sc.exe-stop + UAC dance with a parent-password
+        // authenticated message on the FsWatchdog_Ctrl_Pipe. Falls back to
+        // the old sc.exe path only if the pipe is unreachable (e.g. service
+        // not installed).
         if (!ParentAuth.IsSet())
         {
             AuditAuth("deny (no password configured)");
@@ -104,7 +140,7 @@ public sealed class TrayApp : ApplicationContext
             return;
         }
 
-        using var dlg = new PasswordDialog();
+        using var dlg = new ParentPasswordDialog();
         var result = dlg.ShowDialog();
         if (result != DialogResult.OK)
         {
@@ -121,11 +157,21 @@ public sealed class TrayApp : ApplicationContext
         }
 
         AuditAuth("allow (correct password)");
-        Logger.Info(ProcessNames.Tray, "Parent authenticated; requesting service stop");
+        Logger.Info(ProcessNames.Tray, "Parent authenticated; requesting graceful stop");
 
-        // Ask SCM to stop the service. UseShellExecute=false so we capture stderr
-        // without a console window popping up. If the user is not elevated this
-        // fails with permission denied; we treat that as a hard refuse.
+        var ok = ServicePipeClient.SendGracefulStop(dlg.EnteredPassword);
+        if (ok)
+        {
+            MessageBox.Show("已发送退出指令。FamilySafety 将在几秒内关闭所有守护进程。",
+                "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ExitThread();
+            return;
+        }
+
+        // Pipe unreachable — watchdog may not be running yet, or the user
+        // is invoking this from a non-default install path. Fall back to
+        // the legacy sc.exe + UAC path so the parent always has a way out.
+        AuditAuth("pipe unreachable, falling back to sc.exe stop");
         try
         {
             var psi = new System.Diagnostics.ProcessStartInfo
@@ -143,13 +189,12 @@ public sealed class TrayApp : ApplicationContext
         catch (Exception ex)
         {
             AuditAuth($"stop failed: {ex.GetType().Name}: {ex.Message}");
-            MessageBox.Show($"无法停止服务: {ex.Message}\n\n如果家长本人也无法退出,请在管理员 PowerShell 中运行:\n  sc.exe stop {ServiceName}",
+            MessageBox.Show($"通过命名管道停止失败,sc.exe 也无法运行:{ex.Message}\n\n" +
+                $"如果家长本人也无法退出,请在管理员 PowerShell 中运行:\n  sc.exe stop {ServiceName}",
                 "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
-        // Tear down our own UI; the watchdog will see us exit and stop trying
-        // to respawn us because the service is going down.
         ExitThread();
     }
 
@@ -163,78 +208,6 @@ public sealed class TrayApp : ApplicationContext
             File.AppendAllText(Path.Combine(dir, AuthLogName), line, System.Text.Encoding.UTF8);
         }
         catch { /* ignore */ }
-    }
-}
-
-/// <summary>
-/// Modal password prompt with 30-second auto-close.
-/// </summary>
-internal sealed class PasswordDialog : Form
-{
-    private readonly TextBox _txt = new() { UseSystemPasswordChar = true, Dock = DockStyle.Fill };
-    private readonly Button _ok = new() { Text = "确定", DialogResult = DialogResult.OK, Width = 90 };
-    private readonly Button _cancel = new() { Text = "取消", DialogResult = DialogResult.Cancel, Width = 90 };
-    private readonly System.Windows.Forms.Timer _autoClose = new() { Interval = 30_000 };
-
-    public string EnteredPassword => _txt.Text;
-
-    public PasswordDialog()
-    {
-        Text = "家长验证";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        StartPosition = FormStartPosition.CenterParent;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        ShowInTaskbar = false;
-        ClientSize = new Size(360, 130);
-        Font = new Font("Microsoft YaHei UI", 9F);
-
-        var lbl = new Label
-        {
-            Text = "请输入家长密码以退出 FamilySafety:",
-            Dock = DockStyle.Top,
-            Height = 30,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(8, 0, 0, 0),
-        };
-
-        var buttonPanel = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            FlowDirection = FlowDirection.RightToLeft,
-            Height = 40,
-            Padding = new Padding(8),
-        };
-        buttonPanel.Controls.Add(_cancel);
-        buttonPanel.Controls.Add(_ok);
-
-        _txt.Dock = DockStyle.Top;
-
-        Controls.Add(_txt);
-        Controls.Add(lbl);
-        Controls.Add(buttonPanel);
-
-        AcceptButton = _ok;
-        CancelButton = _cancel;
-        FormClosing += (_, e) =>
-        {
-            if (e.CloseReason == CloseReason.UserClosing && DialogResult != DialogResult.OK)
-            {
-                // Cancel is implicit on window close
-            }
-        };
-
-        _autoClose.Tick += (_, _) =>
-        {
-            _autoClose.Stop();
-            DialogResult = DialogResult.Cancel;
-            Close();
-        };
-        Shown += (_, _) =>
-        {
-            _txt.Focus();
-            _autoClose.Start();
-        };
     }
 }
 

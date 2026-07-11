@@ -26,6 +26,8 @@ internal static class Cli
                     return SetPasswordInteractive(verifyExisting: false);
                 case "status":
                     return Status();
+                case "graceful-stop":
+                    return GracefulStop();
                 default:
                     Console.Error.WriteLine($"Unknown command: {cmd}");
                     PrintUsage();
@@ -130,6 +132,30 @@ internal static class Cli
         return 0;
     }
 
+    private static int GracefulStop()
+    {
+        // Mirrors the tray "退出 (家长)" flow but from an admin console.
+        // ServicePipeClient re-derives PBKDF2 from the entered plaintext
+        // and ships only the hash over the control pipe.
+        if (!ParentAuth.IsSet())
+        {
+            Console.Error.WriteLine("Parent password not configured.");
+            return 2;
+        }
+        var pwd = PromptSecret("Parent password: ");
+        if (string.IsNullOrEmpty(pwd))
+        {
+            Console.Error.WriteLine("Empty password; aborting.");
+            return 2;
+        }
+        var ok = ServicePipeClient.SendGracefulStop(pwd);
+        Console.WriteLine(ok
+            ? "graceful_stop sent. The watchdog will tear children down and exit."
+            : "Failed to reach the watchdog (is it running?). Falling back: " +
+              $"`sc.exe stop {Program.ServiceName}` (requires elevation).");
+        return ok ? 0 : 1;
+    }
+
     private static string PromptSecret(string prompt)
     {
         Console.Write(prompt);
@@ -161,6 +187,7 @@ internal static class Cli
         Console.Error.WriteLine("  FsWatchdogService.exe configure [--backend-url URL]");
         Console.Error.WriteLine("  FsWatchdogService.exe set-password     (verify existing, then change)");
         Console.Error.WriteLine("  FsWatchdogService.exe reset-password   (no verify, audit-logged)");
+        Console.Error.WriteLine("  FsWatchdogService.exe graceful-stop    (parent-password auth, no UAC)");
         Console.Error.WriteLine("  FsWatchdogService.exe status");
     }
 }

@@ -19,6 +19,10 @@ public sealed class MainForm : Form
     private readonly Button _btnSave = new() { Text = "保存", Width = 110, Height = 32 };
     private readonly Button _btnSaveStart = new() { Text = "保存并启动服务", Width = 140, Height = 32 };
     private readonly Button _btnCancel = new() { Text = "取消", Width = 110, Height = 32 };
+    // PR-D: parent-password-authenticated stop-service button. Lets the
+    // parent shut down FamilySafety from this UI without going through
+    // sc.exe + UAC.
+    private readonly Button _btnStopService = new() { Text = "退出服务 (家长)", Width = 150, Height = 32 };
 
     public MainForm()
     {
@@ -85,6 +89,7 @@ public sealed class MainForm : Form
             FlowDirection = FlowDirection.RightToLeft,
             AutoSize = false,
         };
+        btnPanel.Controls.Add(_btnStopService);
         btnPanel.Controls.Add(_btnCancel);
         btnPanel.Controls.Add(_btnSaveStart);
         btnPanel.Controls.Add(_btnSave);
@@ -104,6 +109,7 @@ public sealed class MainForm : Form
         _btnSave.Click += (_, _) => Save(startService: false);
         _btnSaveStart.Click += (_, _) => Save(startService: true);
         _btnCancel.Click += (_, _) => Close();
+        _btnStopService.Click += (_, _) => RequestStopService();
 
         UpdateStrength();
         UpdateStatus(ParentAuth.IsSet() ? "已检测到家长密码,可继续修改。" : "尚未设置家长密码 — 首次配置请填写下方两栏。",
@@ -311,5 +317,51 @@ public sealed class MainForm : Form
     {
         _lblStatus.Text = text;
         _lblStatus.ForeColor = isError ? Color.Firebrick : Color.SeaGreen;
+    }
+
+    /// <summary>
+    /// PR-D: parent-password-authenticated "stop service" path. Mirrors
+    /// FsTray's "退出 (家长)" but lives inside FsConfigUI so the parent can
+    /// also use this dialog. Uses the FsWatchdog_Ctrl_Pipe (no UAC, no
+    /// sc.exe) and falls back gracefully if the pipe is unreachable.
+    /// </summary>
+    private void RequestStopService()
+    {
+        if (!ParentAuth.IsSet())
+        {
+            MessageBox.Show(this, "尚未配置家长密码,无法退出服务。",
+                "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var confirm = MessageBox.Show(this,
+            "确定要停止 FamilySafety 服务吗?\n\n所有守护进程(FsAgent / FsMonitor / FsTray)将一并退出。",
+            "FamilySafety", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (confirm != DialogResult.Yes) return;
+
+        using var dlg = new ParentPasswordDialog();
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        if (!ParentAuth.Verify(dlg.EnteredPassword))
+        {
+            MessageBox.Show(this, "密码错误,已拒绝操作。",
+                "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var ok = ServicePipeClient.SendGracefulStop(dlg.EnteredPassword);
+        if (ok)
+        {
+            MessageBox.Show(this,
+                "已发送退出指令。FamilySafety 将在几秒内关闭所有守护进程。",
+                "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Close();
+        }
+        else
+        {
+            MessageBox.Show(this,
+                "无法连接到 FamilySafety 控制管道(可能服务未运行)。\n" +
+                "如需强制停止,请以管理员身份运行:\n  sc.exe stop FamilySafety",
+                "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 }

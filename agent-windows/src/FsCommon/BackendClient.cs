@@ -82,6 +82,24 @@ public sealed class BackendClient
         var resp = await _http.PostAsJsonAsync("/api/v1/agent/sync-parent-password", req, _jsonOpts, ct);
         return resp.IsSuccessStatusCode;
     }
+
+    /// <summary>
+    /// Upload a screenshot (JPEG or PNG) to the backend's ingestion endpoint.
+    /// The backend validates magic bytes, caps at 8 MiB, and rejects unknown
+    /// trigger_type values (see backend/app/api/v1/agent.py).
+    ///
+    /// Returns true on HTTP 2xx, false otherwise. We do not throw on
+    /// non-success — the caller (HeartbeatLoop) only logs and moves on.
+    /// </summary>
+    public async Task<bool> UploadScreenshotAsync(byte[] jpeg, string triggerType, CancellationToken ct = default)
+    {
+        Auth();
+        using var form = new MultipartFormDataContent("----FSScreenshot" + Guid.NewGuid().ToString("N"));
+        form.Add(new ByteArrayContent(jpeg), "file", $"screen-{DateTime.UtcNow:yyyyMMddHHmmss}.jpg");
+        form.Add(new StringContent(triggerType ?? "parent_now"), "trigger_type");
+        var resp = await _http.PostAsync("/api/v1/agent/screenshot", form, ct);
+        return resp.IsSuccessStatusCode;
+    }
 }
 
 // ===== DTOs matching backend Pydantic schemas =====

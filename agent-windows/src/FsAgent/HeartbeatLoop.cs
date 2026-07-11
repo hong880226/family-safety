@@ -48,10 +48,12 @@ internal static class HeartbeatLoop
                     Logger.Info(ProcessNames.Agent,
                         $"Heartbeat OK: member={hb.MatchedMemberId}, commands={hb.Commands.Count}");
 
-                    // Process commands (e.g. force_quiz)
+                    // Process commands (e.g. force_quiz). capture_screen is
+                    // awaited so the upload finishes before the next heartbeat
+                    // tick fires; lock/shutdown/reboot remain fire-and-forget.
                     foreach (var cmd in hb.Commands)
                     {
-                        HandleCommand(cmd, cfg, ipc);
+                        await HandleCommandAsync(cmd, cfg, ipc, client, ct);
                     }
                 }
             }
@@ -97,8 +99,12 @@ internal static class HeartbeatLoop
         }
     }
 
-    private static void HandleCommand(
-        System.Text.Json.JsonElement cmd, AgentConfig cfg, IpcServer ipc)
+    private static async Task HandleCommandAsync(
+        System.Text.Json.JsonElement cmd,
+        AgentConfig cfg,
+        IpcServer ipc,
+        BackendClient client,
+        CancellationToken ct)
     {
         try
         {
@@ -151,6 +157,41 @@ internal static class HeartbeatLoop
                         Logger.Info(ProcessNames.Agent,
                             $"Command: reboot received (delay={rbDelay}s)");
                         RemotePower.Reboot(rbDelay);
+                    }
+                    break;
+                case "capture_screen":
+                    {
+                        // PR-D: privacy-first capture flow. We always tell
+                        // FsTray to pop a "家长正在查看你的桌面" balloon BEFORE
+                        // the shutter fires, then wait briefly so the balloon
+                        // has a chance to render on the user's desktop.
+                        var trigger = cmd.TryGetProperty("trigger_type", out var tProp)
+                            ? (tProp.GetString() ?? "parent_now")
+                            : "parent_now";
+                        Logger.Info(ProcessNames.Agent,
+                            $"Command: capture_screen received (trigger={trigger})");
+
+                        NotifyService.NotifyScreenshotCapture(trigger);
+
+                        try { await Task.Delay(TimeSpan.FromSeconds(2), ct); }
+                        catch (OperationCanceledException) { return; }
+
+                        var jpeg = ScreenshotCapture.CapturePrimaryScreenJpeg(quality: 60);
+                        if (jpeg != null && jpeg.Length > 0)
+                        {
+                            var ok = await client.UploadScreenshotAsync(jpeg, trigger, ct);
+                            if (ok)
+                                Logger.Info(ProcessNames.Agent,
+                                    $"Uploaded screenshot ({jpeg.Length} bytes)");
+                            else
+                                Logger.Warn(ProcessNames.Agent,
+                                    "Screenshot upload returned non-success");
+                        }
+                        else
+                        {
+                            Logger.Warn(ProcessNames.Agent,
+                                "Screenshot capture produced empty/null bytes");
+                        }
                     }
                     break;
                 default:
