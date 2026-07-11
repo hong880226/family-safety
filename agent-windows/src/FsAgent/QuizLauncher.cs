@@ -21,7 +21,7 @@ internal static class QuizLauncher
             var psi = new ProcessStartInfo
             {
                 FileName = exe,
-                Arguments = $"--reason "{reason}"",
+                Arguments = $"--reason \"{reason}\"",
                 UseShellExecute = false,
                 CreateNoWindow = false,
             };

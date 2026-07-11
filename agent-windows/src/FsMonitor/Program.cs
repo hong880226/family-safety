@@ -17,54 +17,38 @@ internal static class Program
         Logger.Info(ProcessNames.Monitor, "Starting FsMonitor");
 
         var cfg = AgentConfig.Load();
-        var tracker = new ForegroundTracker(cfg);
         var sink = new IpcClient();
-        sink.Connect();
 
-        var lastApp = "";
-        var lastTitle = "";
-        var lastStart = DateTime.UtcNow;
-
+        // Connect to FsAgent (retry loop). IpcClient.Connect() swallows its
+        // own failures; we just keep retrying until the pipe becomes live.
         while (!sink.Connected)
         {
-            Thread.Sleep(2000);
+            Logger.Warn(ProcessNames.Monitor, "Waiting for FsAgent pipe...");
             sink.Connect();
+            Thread.Sleep(2000);
         }
 
-        while (true)
-        {
-            try
-            {
-                var (app, title) = WinApi.GetForegroundInfo();
-                if (app != lastApp || title != lastTitle)
-                {
-                    // App changed: emit usage for previous app
-                    var now = DateTime.UtcNow;
-                    var dur = (int)(now - lastStart).TotalSeconds;
-                    if (dur > 0 && !string.IsNullOrEmpty(lastApp))
-                    {
-                        var rec = new UsageRecordIn
-                        {
-                            AppName = lastApp,
-                            WindowTitle = lastTitle,
-                            StartAt = lastStart,
-                            EndAt = now,
-                            DurationSeconds = dur,
-                            IsOvertime = false,
-                        };
-                        sink.SendUsage(rec);
-                    }
-                    lastApp = app;
-                    lastTitle = title;
-                    lastStart = now;
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn(ProcessNames.Monitor, $"Tracker error: {ex.Message}");
-            }
+        var tracker = new ForegroundTracker(cfg, rec => sink.SendUsage(rec));
 
-            Thread.Sleep(1000);
+        try
+        {
+            while (true)
+            {
+                try
+                {
+                    tracker.Tick();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ProcessNames.Monitor, $"Tracker error: {ex.Message}");
+                }
+                Thread.Sleep(1000);
+            }
+        }
+        finally
+        {
+            // Best-effort flush on shutdown so a clean exit doesn't drop the open slice.
+            try { tracker.Flush(); } catch { /* ignore */ }
         }
     }
 }

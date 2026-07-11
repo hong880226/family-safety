@@ -57,14 +57,13 @@ public sealed class QuizSession
                 {
                     Logger.Info(ProcessNames.Quiz,
                         $"Score {result.Score}/{result.Total}, reward {result.RewardMinutes}min");
+                    var explanations = string.Join("\n", result.Explanations);
+                    var message =
+                        $"本次答题:{result.Score}/{result.Total}({result.CorrectRate:P0})\n" +
+                        $"奖励 {result.RewardMinutes} 分钟!\n\n" +
+                        explanations;
                     MessageBox.Show(
-                        $"本次答题：{result.Score}/{result.Total}（{result.CorrectRate:P0}）
-" +
-                        $"奖励 {result.RewardMinutes} 分钟！
-
-" +
-                        string.Join("
-", result.Explanations),
+                        message,
                         "答题结果",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
