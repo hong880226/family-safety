@@ -50,7 +50,6 @@ from app.schemas.web_inputs import (
 from app.services.csrf import issue_csrf_token, validate_csrf_or_raise
 from app.services.mastery import get_all_mastery
 from app.core.config import get_settings
-from app.web import redirect_with_toast
 
 settings = get_settings()
 
