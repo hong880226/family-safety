@@ -1,7 +1,8 @@
 """Agent-facing schemas (register, heartbeat, usage)."""
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel, Field, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RegisterRequest(BaseModel):
@@ -73,3 +74,20 @@ class UsageSummaryOut(BaseModel):
     duration_seconds: int
     start_at: datetime
     end_at: datetime
+
+
+class SyncParentPasswordRequest(BaseModel):
+    """Agent pushes its locally-stored parent-password verifier to the server.
+
+    The plaintext password is never transmitted — only a PBKDF2-SHA256
+    (hash, salt, iterations) triple encoded as base64. This enables a parent
+    to recover the password on a re-install without re-entering it.
+    """
+
+    hash: str = Field(min_length=1, max_length=512, description="PBKDF2-SHA256 hash, base64")
+    salt: str = Field(min_length=16, max_length=128, description="PBKDF2 salt, base64")
+    iterations: int = Field(ge=10_000, le=10_000_000, description="PBKDF2 iteration count")
+
+
+class SyncParentPasswordResponse(BaseModel):
+    synced_at: datetime

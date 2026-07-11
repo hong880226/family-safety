@@ -2,12 +2,12 @@
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.api.deps import current_device, require_device, get_db
-from app.core.security import hash_api_key, hash_password
+from app.api.deps import require_device, get_db
+from app.core.security import hash_api_key, hash_password, verify_api_key
 from app.models.device import Device
 from app.models.member import Member, MemberRole
 from app.models.family import Family
@@ -18,6 +18,8 @@ from app.schemas.agent import (
     HeartbeatResponse,
     RegisterRequest,
     RegisterResponse,
+    SyncParentPasswordRequest,
+    SyncParentPasswordResponse,
     UsageBatchRequest,
 )
 from app.services.resolver import resolve_member_for_device, resolve_rule
@@ -28,6 +30,28 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 def _new_api_key() -> str:
     return secrets.token_urlsafe(32)
+
+
+async def _resolve_any_device(request: Request, db: AsyncSession) -> Device | None:
+    """Look up the calling device by API key without filtering on revoked.
+
+    `current_device` in deps.py hides revoked devices entirely (returning
+    None). Some endpoints need to distinguish a bad key (401) from a revoked
+    device (403), so this helper includes revoked rows in the candidate set.
+    """
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    api_key = auth[7:].strip()
+    if not api_key or len(api_key) < 8:
+        return None
+    prefix = api_key[:8]
+    stmt = select(Device).where(Device.api_key_prefix == prefix)
+    candidates = list((await db.execute(stmt)).scalars())
+    for d in candidates:
+        if verify_api_key(api_key, d.api_key_hash):
+            return d
+    return None
 
 
 @router.post("/register", response_model=RegisterResponse)
@@ -265,3 +289,54 @@ async def report_usage(
         inserted += 1
     await db.commit()
     return {"inserted": inserted}
+
+
+# ---- Parent-password cloud sync ----
+
+# Minimum interval between accepted syncs from the same device. Agents push
+# every N heartbeats; capping at 1/min keeps a buggy / hostile agent from
+# turning this into a write-storm DB pressure.
+_PARENT_PW_SYNC_MIN_INTERVAL_SEC = 60
+
+
+@router.post("/sync-parent-password", response_model=SyncParentPasswordResponse)
+async def sync_parent_password(
+    req: SyncParentPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> SyncParentPasswordResponse:
+    """Accept a PBKDF2 verifier from the agent for cloud-side recovery.
+
+    The plaintext password is never transmitted — only (hash, salt, iterations).
+    The server stores it per-device; the web UI does not expose it. A future
+    feature (re-install recovery) will let the parent authorise a fresh device
+    to pull this verifier.
+    """
+    # Authenticate without the revoked filter so we can distinguish 401 (bad
+    # key) from 403 (key valid but device revoked).
+    device = await _resolve_any_device(request, db)
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid api key")
+    if device.revoked:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device revoked")
+
+    # SQLite strips tzinfo on read; Postgres preserves it. Normalise so the
+    # subtraction below never raises TypeError.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    last = device.parent_pw_synced_at
+    if last is not None:
+        if last.tzinfo is not None:
+            last = last.replace(tzinfo=None)
+        if (now - last).total_seconds() < _PARENT_PW_SYNC_MIN_INTERVAL_SEC:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="sync too frequent",
+                headers={"Retry-After": str(_PARENT_PW_SYNC_MIN_INTERVAL_SEC)},
+            )
+
+    device.parent_pw_hash = req.hash
+    device.parent_pw_salt = req.salt
+    device.parent_pw_iterations = req.iterations
+    device.parent_pw_synced_at = now
+    await db.commit()
+    return SyncParentPasswordResponse(synced_at=now)

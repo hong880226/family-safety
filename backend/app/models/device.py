@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, Boolean, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -34,6 +34,15 @@ class Device(Base):
     online: Mapped[bool] = mapped_column(Boolean, default=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Cloud-synced copy of the local parent-password verifier (PBKDF2-SHA256
+    # hash + salt + iterations, encoded base64). Used to recover the parent
+    # password on a re-install (the parent never re-enters it). The plaintext
+    # is never sent to the server.
+    parent_pw_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    parent_pw_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    parent_pw_iterations: Mapped[int | None] = mapped_column(nullable=True)
+    parent_pw_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
