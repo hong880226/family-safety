@@ -72,6 +72,11 @@ build/
 *.pdb
 installer/Output/
 
+# ===== GitHub Actions artifact extraction (untracked) =====
+# User-extracted CI artifact zips landed here for offline test-installs;
+# never source, never tracked.
+familysafety-agent-windows/
+
 # ===== OS =====
 .DS_Store
 desktop.ini
