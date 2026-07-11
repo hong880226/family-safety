@@ -2,41 +2,74 @@
 {% block heading %}成员{% endblock %}
 {% set active = 'members' %}
 {% block content %}
-<div class="grid-2">
-  <div class="panel">
-    <h3 class="panel-title">现有成员</h3>
-    <table class="table">
-      <thead><tr><th>姓名</th><th>角色</th><th>年级</th><th>Windows 用户名</th><th></th></tr></thead>
-      <tbody>
-        {% for m in members %}
-        <tr>
-          <td>{{ m.name }}</td>
-          <td>{% if m.role=='parent' %}家长{% else %}孩子{% endif %}</td>
-          <td>{{ m.grade or '—' }}</td>
-          <td><code>{{ m.windows_username or '—' }}</code></td>
-          <td class="row-actions">
-            <a href="/web/members/{{ m.id }}/edit" class="btn btn-sm">编辑</a>
-            {% if m.role != 'parent' %}
-            <form method="post" action="/web/members/{{ m.id }}/delete" class="inline-form"
-                  onsubmit="return confirm('确定删除成员 {{ m.name }} 吗?');">
-              <button type="submit" class="btn btn-sm btn-danger">删除</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
 
-  <div class="panel">
-    <h3 class="panel-title">添加孩子</h3>
-    <form method="post" action="/web/members" class="form">
-      <label class="field"><span>姓名</span><input name="name" required /></label>
-      <label class="field"><span>年级</span><input type="number" name="grade" min="1" max="12" value="4" /></label>
-      <label class="field"><span>Windows 用户名</span><input name="windows_username" placeholder="kid01" /></label>
-      <button type="submit" class="btn btn-primary">添加</button>
-    </form>
+{% if members %}
+<div class="member-grid">
+  {% for m in members %}
+  <div class="member-card">
+    <div class="member-card-header">
+      <div class="avatar">{{ (m.name or '?')[:1] | upper }}</div>
+      <div style="min-width:0; flex:1;">
+        <h3 class="member-name">{{ m.name }}</h3>
+        <p class="member-meta">
+          {% if m.role == 'parent' %}
+            <span class="badge badge-info">家长</span>
+          {% else %}
+            <span class="badge badge-muted">孩子</span>
+          {% endif %}
+          {% if m.grade %}· 年级 {{ m.grade }}{% endif %}
+        </p>
+      </div>
+    </div>
+    <div class="member-stats">
+      <div>Windows 用户</div>
+      <div style="text-align:right;"><code>{{ m.windows_username or '—' }}</code></div>
+    </div>
+    <div class="member-actions">
+      <a href="/web/members/{{ m.id }}/edit" class="btn btn-sm">编辑</a>
+      {% if m.role != 'parent' %}
+      <form method="post" action="/web/members/{{ m.id }}/delete" class="inline-form">
+        <button type="submit" class="btn btn-sm btn-danger"
+                data-confirm="确定删除成员 {{ m.name }}?此操作不可撤销。">删除</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="panel">
+  <div class="empty">
+    <div class="empty-icon">👨‍👩‍👧</div>
+    <h4 class="empty-title">还没有添加任何孩子</h4>
+    <p class="empty-desc">先在右侧添加一个孩子成员,Agent 才能识别归属于他们的设备。</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="panel" style="max-width: 480px;">
+  <h3 class="panel-title">添加孩子</h3>
+  <form method="post" action="/web/members" class="form" novalidate>
+    <label class="field">
+      <span>姓名</span>
+      <input name="name" required maxlength="32" />
+      <div class="field-error"></div>
+    </label>
+    <label class="field">
+      <span>年级</span>
+      <input type="number" name="grade" min="1" max="12" value="4" />
+      <div class="field-hint">用于答题难度推荐</div>
+      <div class="field-error"></div>
+    </label>
+    <label class="field">
+      <span>Windows 用户名</span>
+      <input name="windows_username" pattern="[A-Za-z0-9_.\-]{1,32}" maxlength="32" placeholder="kid01" />
+      <div class="field-hint">Member Agent 上报的 owner</div>
+      <div class="field-error"></div>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">添加</button>
+    </div>
+  </form>
 </div>
 {% endblock %}

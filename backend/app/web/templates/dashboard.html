@@ -2,12 +2,15 @@
 {% block heading %}概览{% endblock %}
 {% set active = 'dashboard' %}
 {% block content %}
+{% set pct = summary.used_vs_limit_percent or 0 %}
 <div class="kpi-grid">
-  <div class="kpi-card">
+  <div class="kpi-card {% if pct >= 90 %}is-empty{% endif %}">
     <div class="kpi-label">今日已用</div>
     <div class="kpi-value">{{ summary.today_minutes }} <span class="kpi-unit">分钟</span></div>
-    <div class="kpi-bar"><div class="kpi-bar-fill" style="width: {{ summary.used_vs_limit_percent }}%"></div></div>
-    <div class="kpi-sub muted">{{ summary.used_vs_limit_percent|round(0) }}% / {{ summary.daily_limit }} 分钟</div>
+    <div class="kpi-bar">
+      <div class="kpi-bar-fill {% if pct >= 100 %}is-danger{% elif pct >= 80 %}is-warn{% endif %}" style="width: {{ pct }}%"></div>
+    </div>
+    <div class="kpi-sub muted">{{ pct|round(0) }}% / {{ summary.daily_limit }} 分钟</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">本周累计</div>
@@ -19,15 +22,19 @@
     <div class="kpi-value">{{ summary.overtime_count_this_week }}</div>
     <div class="kpi-sub muted">次</div>
   </div>
-  <div class="kpi-card">
+  <div class="kpi-card {% if not summary.last_quiz_at %}is-empty{% endif %}">
     <div class="kpi-label">最近答题</div>
-    <div class="kpi-value muted">{{ summary.last_quiz_at or '—' }}</div>
+    <div class="kpi-value muted" style="font-size:18px;">{{ summary.last_quiz_at or '暂无' }}</div>
   </div>
 </div>
 
 <div class="grid-2">
   <div class="panel">
-    <h3 class="panel-title">今日 Top 应用</h3>
+    <h3 class="panel-title">
+      <span>今日 Top 应用</span>
+      <span class="panel-title-actions muted small">最近 24h</span>
+    </h3>
+    {% if summary.top_apps %}
     <table class="table">
       <thead><tr><th>应用</th><th class="right">分钟</th><th></th></tr></thead>
       <tbody>
@@ -35,17 +42,26 @@
         <tr>
           <td>{{ app.name }}</td>
           <td class="right">{{ app.minutes }}</td>
-          <td class="bar-cell"><div class="bar" style="width: {{ app.percent }}%"></div></td>
+          <td class="bar-cell"><div class="bar" style="--w: {{ app.percent }}%"></div></td>
         </tr>
-        {% else %}
-        <tr><td colspan="3" class="muted center">今天还没有数据</td></tr>
         {% endfor %}
       </tbody>
     </table>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">📊</div>
+      <h4 class="empty-title">今天还没有数据</h4>
+      <p class="empty-desc">成员的设备还没上报活动。检查 Agent 服务状态,或等待下一个上报周期。</p>
+    </div>
+    {% endif %}
   </div>
 
   <div class="panel">
-    <h3 class="panel-title">内容分类</h3>
+    <h3 class="panel-title">
+      <span>内容分类</span>
+      <span class="panel-title-actions muted small">本周</span>
+    </h3>
+    {% if summary.category_breakdown %}
     <div class="category-bars">
       {% for cat, mins in summary.category_breakdown.items() %}
       <div class="cat-row">
@@ -53,20 +69,29 @@
         <div class="cat-bar"><div class="cat-bar-fill" style="width: {{ summary.category_pct[cat] }}%"></div></div>
         <span class="cat-val">{{ mins }} 分钟</span>
       </div>
-      {% else %}
-      <p class="muted">暂无数据</p>
       {% endfor %}
     </div>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">🗂</div>
+      <h4 class="empty-title">暂无分类数据</h4>
+      <p class="empty-desc">尚未捕获到归类为内容分类的使用记录。</p>
+    </div>
+    {% endif %}
   </div>
 </div>
 
 <div class="panel">
   <h3 class="panel-title">本周答题表现</h3>
   {% if summary.quiz_summary %}
-    <p>共 {{ summary.quiz_summary.count }} 次答题，{{ summary.quiz_summary.questions }} 道题，平均正确率 {{ summary.quiz_summary.accuracy }}%</p>
-    <p class="muted">继续努力！</p>
+    <p>共 <strong>{{ summary.quiz_summary.count }}</strong> 次答题,<strong>{{ summary.quiz_summary.questions }}</strong> 道题,平均正确率 <strong>{{ summary.quiz_summary.accuracy }}%</strong>。</p>
+    <p class="muted">继续努力!</p>
   {% else %}
-    <p class="muted">本周还没有答题记录</p>
+    <div class="empty" style="padding:32px 12px;">
+      <div class="empty-icon">🎯</div>
+      <h4 class="empty-title">本周还没有答题记录</h4>
+      <p class="empty-desc">当成员触发答题配置时会自动开始。<a href="/web/quiz-config">配置答题 →</a></p>
+    </div>
   {% endif %}
 </div>
 {% endblock %}

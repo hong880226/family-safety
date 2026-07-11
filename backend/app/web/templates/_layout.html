@@ -1,19 +1,47 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="{{ csrf_token or '' }}" />
+  <meta name="theme-color" content="#0d1117" />
   <title>{% block title %}FamilySafety{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/app.css" />
   <script src="/static/js/htmx.min.js" defer></script>
   <script defer>
-    // Auto-attach CSRF token to htmx POST/PUT/DELETE requests.
+    // === Theme (P7) ===
+    (function () {
+      const saved = localStorage.getItem('fs-theme');
+      const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      const theme = saved || (prefersLight ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+      // Avoid FOUC by setting background immediately
+      document.documentElement.style.background = theme === 'light' ? '#f6f8fa' : '#0d1117';
+    })();
+
+    window.addEventListener('DOMContentLoaded', function () {
+      const html = document.documentElement;
+      const themeBtn = document.querySelector('[data-theme-toggle]');
+      if (themeBtn) {
+        const sync = () => {
+          themeBtn.textContent = html.getAttribute('data-theme') === 'light' ? '☾' : '☀';
+          themeBtn.title = html.getAttribute('data-theme') === 'light' ? '切换深色模式' : '切换浅色模式';
+        };
+        sync();
+        themeBtn.addEventListener('click', () => {
+          const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+          html.setAttribute('data-theme', next);
+          localStorage.setItem('fs-theme', next);
+          sync();
+        });
+      }
+    });
+
+    // === htmx: CSRF + Loading indicator (P1/P5) ===
     document.addEventListener('htmx:configRequest', (e) => {
       const t = document.querySelector('meta[name="csrf-token"]')?.content;
       if (t) e.detail.headers['X-CSRF-Token'] = t;
     });
-    // Auto-attach CSRF token to native <form method="post"> submissions.
     document.addEventListener('submit', (e) => {
       const form = e.target;
       if (!form || form.method?.toLowerCase() !== 'post') return;
@@ -28,10 +56,27 @@
       }
       inp.value = t;
     }, true);
+
+    // === htmx: show feedback after swap (P5) ===
+    document.addEventListener('htmx:afterSwap', (e) => {
+      const swap = e.detail.target;
+      // If the swap was inside a confirmation row, remove the row.
+      swap?.querySelectorAll('[data-htmx-remove-on-success]').forEach((n) => n.remove());
+    });
+    document.addEventListener('htmx:responseError', (e) => {
+      if (window.showToast) window.showToast('error', '请求失败(' + (e.detail.xhr.status || '网络') + ')');
+    });
   </script>
+  <script src="/static/js/app.js" defer></script>
+  <style>
+    /* Anti-FOUC for theme */
+    html { background: var(--bg); }
+  </style>
 </head>
 <body class="app-body">
-  <aside class="sidebar">
+  <div class="htmx-indicator"></div>
+
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="logo-mark small"></div>
       <span>FamilySafety</span>
@@ -51,13 +96,22 @@
     </nav>
     <div class="sidebar-footer">
       <span class="muted">v{{ version }}</span>
-      <a href="/web/logout" class="muted">退出</a>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="theme-toggle" data-theme-toggle title="切换主题">☀</button>
+        <a href="/web/logout" class="muted">退出</a>
+      </div>
     </div>
   </aside>
 
   <main class="main">
     <header class="page-header">
-      <h1>{% block heading %}{% endblock %}</h1>
+      <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+        <button class="menu-toggle" data-sidebar-toggle aria-label="菜单">☰</button>
+        <div style="min-width:0;">
+          <h1>{% block heading %}{% endblock %}</h1>
+          {% block subtitle %}{% endblock %}
+        </div>
+      </div>
       <div class="page-actions">{% block actions %}{% endblock %}</div>
     </header>
 
@@ -65,5 +119,7 @@
       {% block content %}{% endblock %}
     </section>
   </main>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 </body>
 </html>

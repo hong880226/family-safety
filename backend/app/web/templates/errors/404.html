@@ -1,20 +1,22 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d1117" />
   <title>404 · FamilySafety</title>
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>html { background: #0d1117; }</style>
 </head>
 <body class="error-page">
   <div class="error-card">
     <div class="error-code">404</div>
-    <h1>{{ t("error.404.title") }}</h1>
-    <p class="muted">{{ t("error.404.body") }}</p>
-    <p class="muted small">路径：<code>{{ path or "" }}</code></p>
+    <h1>{{ t("error.404.title") or "页面走丢了" }}</h1>
+    <p>{{ t("error.404.body") or "你访问的路径不存在或已被移除。" }}</p>
+    <p class="muted small">路径: <code>{{ path or "" }}</code></p>
     <div class="error-actions">
       <a href="/web/dashboard" class="btn btn-primary">返回首页</a>
-      <a href="/web/login" class="btn btn-ghost">重新登录</a>
+      <a href="/web/login" class="btn">重新登录</a>
     </div>
   </div>
 </body>

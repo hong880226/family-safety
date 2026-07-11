@@ -2,15 +2,29 @@
 {% block heading %}编辑成员{% endblock %}
 {% set active = 'members' %}
 {% block content %}
-<div class="panel" style="max-width: 520px;">
+<div class="panel" style="max-width: 540px;">
   <h3 class="panel-title">编辑 {{ m.name }}</h3>
-  <form method="post" action="/web/members/{{ m.id }}/edit" class="form">
-    <label class="field"><span>姓名</span><input name="name" required value="{{ m.name }}" /></label>
-    <label class="field"><span>年级</span><input type="number" name="grade" min="1" max="12" value="{{ m.grade or 4 }}" /></label>
-    <label class="field"><span>Windows 用户名</span><input name="windows_username" placeholder="kid01" value="{{ m.windows_username or '' }}" /></label>
+  <form method="post" action="/web/members/{{ m.id }}/edit" class="form" novalidate>
+    <label class="field">
+      <span>姓名</span>
+      <input name="name" required minlength="1" maxlength="32" value="{{ m.name }}" />
+      <div class="field-error"></div>
+    </label>
+    <label class="field">
+      <span>年级</span>
+      <input type="number" name="grade" min="1" max="12" value="{{ m.grade or 4 }}" />
+      <div class="field-hint">1=小学一年级,12=高三。用于答题难度推荐。</div>
+      <div class="field-error"></div>
+    </label>
+    <label class="field">
+      <span>Windows 用户名</span>
+      <input name="windows_username" pattern="[A-Za-z0-9_.\-]{1,32}" maxlength="32" placeholder="kid01" value="{{ m.windows_username or '' }}" />
+      <div class="field-hint">Member Agent 上报的 owner,用于标识哪台 Windows 设备归属本成员。</div>
+      <div class="field-error"></div>
+    </label>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">保存</button>
-      <a href="/web/members" class="btn">取消</a>
+      <a href="/web/members" class="btn btn-ghost">取消</a>
     </div>
   </form>
 </div>

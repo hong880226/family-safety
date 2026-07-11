@@ -1,19 +1,22 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d1117" />
   <title>500 · FamilySafety</title>
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>html { background: #0d1117; }</style>
 </head>
 <body class="error-page">
   <div class="error-card">
     <div class="error-code">500</div>
-    <h1>{{ t("error.500.title") }}</h1>
-    <p>{{ t("error.500.body") }}</p>
-    <p class="muted small">请求 ID：<code>{{ request_id or 'unknown' }}</code></p>
+    <h1>{{ t("error.500.title") or "服务内部错误" }}</h1>
+    <p>{{ t("error.500.body") or "服务出问题了,我们已经记录这次错误。" }}</p>
+    <p class="muted small">请求 ID: <code>{{ request_id or 'unknown' }}</code></p>
     <div class="error-actions">
       <a href="/web/dashboard" class="btn btn-primary">返回首页</a>
+      <button class="btn btn-ghost" onclick="location.reload()">重试</button>
     </div>
   </div>
 </body>
