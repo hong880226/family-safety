@@ -12,9 +12,8 @@
     <ProjectReference Include="..\FsCommon\FsCommon.csproj" />
     <ProjectReference Include="..\FsHook\FsHook.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <Content Include="..\FsHook\x64\Release\FsHook.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+  <!-- FsHook.dll is delivered transitively via ProjectReference above.
+       The previous hard-coded x64\Release path was wrong (no such folder
+       exists under SDK-style builds for plain-C# projects) and broke every
+       non-Release configuration. -->
 </Project>
