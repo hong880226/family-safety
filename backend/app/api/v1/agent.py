@@ -1,18 +1,24 @@
 """Agent-facing endpoints: register, heartbeat, usage."""
+import asyncio
 import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_device
 from app.core.security import hash_api_key, hash_password, verify_api_key
+from app.db import session as session_mod
 from app.models.device import Device
+from app.models.device_command import DeviceCommand
 from app.models.family import Family
 from app.models.member import Member, MemberRole
+from app.models.notification_config import NotificationConfig
 from app.models.rule import Rule
 from app.models.screenshot import Screenshot
+from app.models.toxic_alert import ToxicAlert
 from app.models.usage_record import UsageRecord
 from app.schemas.agent import (
     HeartbeatRequest,
@@ -23,8 +29,11 @@ from app.schemas.agent import (
     SyncParentPasswordResponse,
     UsageBatchRequest,
 )
+from app.services.content_classifier import classify_content
 from app.services.resolver import resolve_member_for_device, resolve_rule
+from app.services.schedule import now_in_window
 from app.services.screenshot_store import save_jpeg
+from app.services.toxic_judge import judge_toxic
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -225,20 +234,36 @@ async def heartbeat(
 
     rule_dict = None
     matched_member_id = device.member_id
+    rule_obj = None
     if device.member_id:
         member = await db.get(Member, device.member_id)
         if member:
-            rule = await resolve_rule(db, member, username, model)
-            if rule:
+            rule_obj = await resolve_rule(db, member, username, model)
+            if rule_obj:
                 rule_dict = {
-                    "id": rule.id,
-                    "name": rule.name,
-                    "daily_limit_minutes": rule.daily_limit_minutes,
-                    "monitored_apps": rule.monitored_apps,
-                    "bedtime_start": rule.bedtime_start.isoformat() if rule.bedtime_start else None,
-                    "bedtime_end": rule.bedtime_end.isoformat() if rule.bedtime_end else None,
-                    "questions_per_session": rule.questions_per_session,
-                    "max_reward_minutes": rule.max_reward_minutes,
+                    "id": rule_obj.id,
+                    "name": rule_obj.name,
+                    "daily_limit_minutes": rule_obj.daily_limit_minutes,
+                    "monitored_apps": rule_obj.monitored_apps,
+                    "bedtime_start": rule_obj.bedtime_start.isoformat() if rule_obj.bedtime_start else None,
+                    "bedtime_end": rule_obj.bedtime_end.isoformat() if rule_obj.bedtime_end else None,
+                    "default_action": rule_obj.default_action,
+                    "time_windows": [
+                        {
+                            "weekday_mask": w.weekday_mask,
+                            "start_time": w.start_time.strftime("%H:%M"),
+                            "end_time": w.end_time.strftime("%H:%M"),
+                            "action": w.action,
+                            "cap_minutes": w.cap_minutes,
+                            "priority": w.priority,
+                        }
+                        for w in sorted(
+                            rule_obj.time_windows or [],
+                            key=lambda w: (-w.priority, w.id),
+                        )
+                    ],
+                    "questions_per_session": rule_obj.questions_per_session,
+                    "max_reward_minutes": rule_obj.max_reward_minutes,
                 }
 
     await db.commit()
@@ -251,8 +276,109 @@ async def heartbeat(
         elif limit_sec - req.used_seconds_today <= 300 and req.used_seconds_today > 0:
             commands.append({
                 "type": "show_warning",
-                "message": f"还剩 5 分钟，请保存进度",
+                "message": "还剩 5 分钟，请保存进度",
             })
+
+    # ---- PR-A: weekly schedule + queued commands + content gating ----
+
+    # Schedule: if a TimeWindow applies right now and denies or caps, surface
+    # the appropriate force_quiz reason BEFORE the daily-limit check above.
+    if rule_obj is not None:
+        try:
+            allowed, cap = now_in_window(rule_obj, now)
+        except Exception:
+            logger.exception("schedule evaluation failed")
+            allowed, cap = True, None
+        if not allowed:
+            commands.insert(0, {"type": "force_quiz", "reason": "outside_window"})
+        elif cap is not None:
+            cap_sec = cap * 60
+            if req.used_seconds_today >= cap_sec:
+                commands.insert(
+                    0,
+                    {"type": "force_quiz", "reason": "window_cap_exceeded"},
+                )
+
+    # ---- Device commands (lock_screen / shutdown / reboot / force_quiz) ----
+    # Mark unconsumed+unexpired rows as consumed and append to the response.
+    cmd_stmt = select(DeviceCommand).where(
+        DeviceCommand.device_id == device.id,
+        DeviceCommand.consumed_at.is_(None),
+    )
+    pending = list((await db.execute(cmd_stmt)).scalars())
+    consumed_any = False
+    now_naive = now.replace(tzinfo=None)
+    for c in pending:
+        exp = c.expires_at
+        if exp is not None:
+            if exp.tzinfo is not None:
+                exp = exp.replace(tzinfo=None)
+            if exp <= now_naive:
+                continue
+        cmd_payload = {"type": c.type}
+        if c.payload:
+            cmd_payload.update(c.payload)
+        commands.append(cmd_payload)
+        c.consumed_at = now
+        consumed_any = True
+    if consumed_any:
+        await db.commit()
+
+    # ---- Toxicity gating (LLM-flagged content triggers force_quiz) ----
+    if req.current_app or req.window_title:
+        try:
+            cls = await classify_content(
+                db, device.family_id, req.current_app or "", req.window_title or ""
+            )
+        except Exception:
+            logger.exception("content classification failed")
+            cls = None
+        if cls is not None and cls.action == "flag_for_llm":
+            try:
+                family_id = device.family_id
+                member_pk = device.member_id
+                app_name = req.current_app or ""
+                title = req.window_title or ""
+
+                async def _judge_and_maybe_alert() -> None:
+                    try:
+                        session_local = getattr(
+                            session_mod, "AsyncSessionLocal", None
+                        )
+                        if session_local is None:
+                            return
+                        async with session_local() as s2:
+                            verdict = await judge_toxic(app_name, title)
+                            threshold = 0.7
+                            cfg_stmt = select(NotificationConfig).where(
+                                NotificationConfig.family_id == family_id
+                            )
+                            cfg = (await s2.execute(cfg_stmt)).scalar_one_or_none()
+                            if cfg and cfg.toxic_alert_threshold is not None:
+                                threshold = cfg.toxic_alert_threshold
+                            is_toxic = bool(verdict.get("is_toxic"))
+                            conf = float(verdict.get("confidence", 0.0))
+                            if is_toxic and conf >= threshold:
+                                alert = ToxicAlert(
+                                    member_id=member_pk,
+                                    device_id=device.id,
+                                    window_title=title[:500],
+                                    app_name=app_name[:255],
+                                    category=str(verdict.get("category", "other")),
+                                    confidence=conf,
+                                    llm_judgment=verdict,
+                                    reason=str(verdict.get("reason", ""))[:500],
+                                    notified=False,
+                                    parent_acknowledged=False,
+                                )
+                                s2.add(alert)
+                                await s2.commit()
+                    except Exception:
+                        logger.exception("background toxic judge failed")
+
+                asyncio.create_task(_judge_and_maybe_alert())
+            except Exception:
+                logger.exception("failed to schedule toxic judge task")
 
     return HeartbeatResponse(
         matched_rule=rule_dict,

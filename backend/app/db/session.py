@@ -53,6 +53,7 @@ async def init_db() -> None:
     from app.models import (  # noqa: F401  ensure models are registered
         content_rule,
         device,
+        device_command,
         family,
         member,
         notification_config,
@@ -62,6 +63,7 @@ async def init_db() -> None:
         screenshot,
         subject_mastery,
         suggestion,
+        time_window,
         toxic_alert,
         usage_record,
         weekly_report,

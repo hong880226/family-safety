@@ -1,7 +1,7 @@
 """Rule model with match_key for (username, computer_model) matching."""
 from datetime import datetime, time
 
-from sqlalchemy import String, Integer, ForeignKey, DateTime, Time, Float, Boolean, JSON, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Time, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -30,6 +30,11 @@ class Rule(Base):
     monitored_apps: Mapped[list] = mapped_column(JSON, default=list)
     blocked_websites: Mapped[list] = mapped_column(JSON, default=list)
 
+    # Default verdict when no TimeWindow covers the current wall-clock time.
+    # "allow" permits usage up to the daily_limit; "deny" forces a force_quiz
+    # immediately. See app.services.schedule.
+    default_action: Mapped[str] = mapped_column(String(8), default="allow")
+
     questions_per_session: Mapped[int] = mapped_column(Integer, default=3)
     reward_ratio: Mapped[float] = mapped_column(Float, default=0.2)
     max_reward_minutes: Mapped[int] = mapped_column(Integer, default=20)
@@ -45,4 +50,11 @@ class Rule(Base):
     member = relationship("Member", back_populates="rules")
     quiz_config = relationship(
         "QuizConfig", back_populates="rule", uselist=False, cascade="all, delete-orphan"
+    )
+    time_windows = relationship(
+        "TimeWindow",
+        back_populates="rule",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TimeWindow.priority",
     )

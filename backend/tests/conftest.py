@@ -1,4 +1,5 @@
 """pytest config for backend tests."""
+import os
 import sys
 from pathlib import Path
 
@@ -14,3 +15,11 @@ except Exception:
 BACKEND = Path(__file__).resolve().parent.parent
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
+
+# Force a test-friendly config BEFORE any ``app.*`` import so the cached
+# settings in app.db.session pick up an async-friendly URL. The shell often
+# exports ``DATABASE_URL=sqlite:///...`` (sync) from a prior dev session, which
+# then makes ``create_async_engine`` blow up at import time.
+os.environ.setdefault("ENVIRONMENT", "test")
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["JWT_SECRET"] = os.environ.get("JWT_SECRET") or "test-jwt-secret-not-for-production-32+chars"

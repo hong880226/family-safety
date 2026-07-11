@@ -7,21 +7,23 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-
 from app.core.config import get_settings
 from app.db.session import Base
+
 # Import all models so Base.metadata is populated for autogenerate.
 from app.models import (  # noqa: F401
     content_rule,
     device,
+    device_command,
     family,
     member,
     notification_config,
     quiz_config,
     quiz_session,
     rule,
-    suggestion,
     subject_mastery,
+    suggestion,
+    time_window,
     toxic_alert,
     usage_record,
     weekly_report,

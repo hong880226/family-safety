@@ -12,7 +12,7 @@ Security notes:
 from __future__ import annotations
 
 import urllib.parse
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import jinja2
@@ -33,6 +33,7 @@ from app.core.security import (
 )
 from app.models.content_rule import ContentRule, MatchType, ContentCategory, ContentAction
 from app.models.device import Device
+from app.models.device_command import DeviceCommand
 from app.models.member import Member, MemberRole
 from app.models.notification_config import NotificationConfig
 from app.models.quiz_config import QuizConfig
@@ -441,6 +442,7 @@ async def rules_page(
             "daily_limit_minutes": r.daily_limit_minutes,
             "questions_per_session": r.questions_per_session,
             "enabled": r.enabled,
+            "default_action": r.default_action,
             "member_name": m.name if m else "—",
         })
     return templates.TemplateResponse(
@@ -451,6 +453,115 @@ async def rules_page(
             "version": _app_version(), "csrf_token": issue_csrf_token(request),
         },
     )
+
+
+# ---- Rule edit (weekly time windows) ----
+
+
+@router.get("/rules/{rule_id}/edit", response_class=HTMLResponse)
+async def rule_edit_get(
+    rule_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    """Render the rule edit form (rule-level fields + weekly windows)."""
+    # Cross-family check via the rule's owning member.
+    stmt = (
+        select(Rule)
+        .join(Member, Rule.member_id == Member.id)
+        .where(Rule.id == rule_id, Member.family_id == parent.family_id)
+    )
+    rule = (await db.execute(stmt)).scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="rule not found")
+    owner = await db.get(Member, rule.member_id)
+    # Materialise the windows; the relationship order_by already sorts by
+    # priority asc, so reverse for display (highest priority on top).
+    windows = sorted(rule.time_windows, key=lambda w: (-w.priority, w.id))
+    return templates.TemplateResponse(
+        request,
+        "rule_edit.html",
+        {
+            "request": request, "rule": rule, "member": owner,
+            "windows": windows,
+            "version": _app_version(),
+            "csrf_token": issue_csrf_token(request),
+        },
+    )
+
+
+@router.post("/rules/{rule_id}/edit")
+async def rule_edit_post(
+    rule_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace a rule's full set of weekly time windows."""
+    await validate_csrf_or_raise(request)
+
+    stmt = (
+        select(Rule)
+        .join(Member, Rule.member_id == Member.id)
+        .where(Rule.id == rule_id, Member.family_id == parent.family_id)
+    )
+    rule = (await db.execute(stmt)).scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="rule not found")
+
+    from app.models.time_window import TimeWindow
+    from app.schemas.rule_edit_form import RuleEditForm
+    from app.schemas.time_window import TimeWindowIn
+
+    form_data = await request.form()
+    try:
+        form = RuleEditForm(
+            default_action=str(form_data.get("default_action") or "allow"),
+            daily_limit_minutes=int(form_data.get("daily_limit_minutes") or 120),
+            enabled=str(form_data.get("enabled") or "") not in ("", "0", "false"),
+            windows_json=str(form_data.get("windows_json") or "[]"),
+        )
+    except Exception as exc:
+        owner = await db.get(Member, rule.member_id)
+        return templates.TemplateResponse(
+            request,
+            "rule_edit.html",
+            {
+                "request": request, "rule": rule, "member": owner,
+                "windows": sorted(rule.time_windows, key=lambda w: (-w.priority, w.id)),
+                "version": _app_version(),
+                "csrf_token": issue_csrf_token(request),
+                "error": f"表单校验失败: {exc}",
+            },
+            status_code=400,
+        )
+
+    rule.default_action = form.default_action
+    rule.daily_limit_minutes = form.daily_limit_minutes
+    rule.enabled = form.enabled
+
+    import json as _json
+    rows = _json.loads(form.windows_json)
+    new_windows = []
+    for row in rows:
+        tw_in = TimeWindowIn(**row)
+        new_windows.append(TimeWindow(
+            weekday_mask=tw_in.weekday_mask,
+            start_time=tw_in.start_time,
+            end_time=tw_in.end_time,
+            action=tw_in.action,
+            cap_minutes=tw_in.cap_minutes,
+            enabled=tw_in.enabled,
+            priority=tw_in.priority,
+        ))
+    for existing in list(rule.time_windows):
+        await db.delete(existing)
+    await db.flush()
+    for tw in new_windows:
+        rule.time_windows.append(tw)
+    await db.commit()
+    return redirect_with_toast("/web/rules", "success", "规则已更新")
 
 
 @router.get("/quiz-config", response_class=HTMLResponse)
@@ -898,3 +1009,95 @@ async def screenshot_image(
         media_type=media_type,
         headers={"Cache-Control": "no-store"},
     )
+
+
+# ---- Remote device commands (lock / shutdown / reboot) ----
+#
+# Security boundary: every endpoint verifies ``device.family_id ==
+# parent.family_id``. Without this check, a parent logged into family A could
+# target family B's device. Commands are stored in the device_commands table
+# and delivered on the agent's next heartbeat — the agent is what actually
+# invokes ``LockWorkStation()`` / ``shutdown``.
+
+
+async def _resolve_parent_device_or_404(
+    parent: Member, device_id: int, db: AsyncSession,
+) -> Device:
+    d = await db.get(Device, device_id)
+    if d is None or d.family_id != parent.family_id:
+        raise HTTPException(status_code=404, detail="device not found")
+    return d
+
+
+def _enqueue_remote_command(
+    *,
+    db: AsyncSession,
+    device: Device,
+    parent: Member,
+    cmd_type: str,
+    payload: dict | None = None,
+    ttl_seconds: int = 600,
+) -> None:
+    """Append a queued command to ``device_commands`` for next heartbeat."""
+    cmd = DeviceCommand(
+        device_id=device.id,
+        family_id=device.family_id,
+        type=cmd_type,
+        payload=payload or {},
+        created_by=parent.id,
+        expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+    )
+    db.add(cmd)
+
+
+@router.post("/devices/{device_id}/lock-screen")
+async def device_lock_screen(
+    device_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    await validate_csrf_or_raise(request)
+    d = await _resolve_parent_device_or_404(parent, device_id, db)
+    _enqueue_remote_command(
+        db=db, device=d, parent=parent, cmd_type="lock_screen"
+    )
+    await db.commit()
+    return redirect_with_toast("/web/devices", "success", f"已下发锁屏指令到 {d.name}")
+
+
+@router.post("/devices/{device_id}/shutdown")
+async def device_shutdown(
+    device_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    await validate_csrf_or_raise(request)
+    d = await _resolve_parent_device_or_404(parent, device_id, db)
+    _enqueue_remote_command(
+        db=db, device=d, parent=parent,
+        cmd_type="shutdown",
+        payload={"delay_seconds": 60, "message": "家长远程关机"},
+    )
+    await db.commit()
+    return redirect_with_toast("/web/devices", "success", f"已下发关机指令到 {d.name}")
+
+
+@router.post("/devices/{device_id}/reboot")
+async def device_reboot(
+    device_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    await validate_csrf_or_raise(request)
+    d = await _resolve_parent_device_or_404(parent, device_id, db)
+    _enqueue_remote_command(
+        db=db, device=d, parent=parent,
+        cmd_type="reboot",
+        payload={"delay_seconds": 60, "message": "家长远程重启"},
+    )
+    await db.commit()
+    return redirect_with_toast("/web/devices", "success", f"已下发重启指令到 {d.name}")
+

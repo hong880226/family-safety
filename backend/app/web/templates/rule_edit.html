@@ -1,0 +1,153 @@
+{% extends "_layout.html" %}
+{% block heading %}编辑规则{% endblock %}
+{% set active = 'rules' %}
+{% block content %}
+<div class="panel" style="max-width: 880px;">
+  <h3 class="panel-title">编辑规则 — {{ rule.name }} ({{ member.name }})</h3>
+
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/web/rules/{{ rule.id }}/edit" class="form" id="ruleEditForm" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="windows_json" id="windowsJsonInput" value="[]" />
+
+    <label class="field">
+      <span>默认动作</span>
+      <select name="default_action">
+        <option value="allow" {% if rule.default_action != 'deny' %}selected{% endif %}>允许（无窗口匹配时）</option>
+        <option value="deny" {% if rule.default_action == 'deny' %}selected{% endif %}>禁止</option>
+      </select>
+      <div class="field-hint">当前时间不在任何窗口内时生效。</div>
+    </label>
+
+    <label class="field">
+      <span>每日限额（分钟）</span>
+      <input type="number" name="daily_limit_minutes" min="0" max="1440"
+             value="{{ rule.daily_limit_minutes }}" />
+    </label>
+
+    <label class="field-inline">
+      <input type="checkbox" name="enabled" value="true" {% if rule.enabled %}checked{% endif %} />
+      <span>启用此规则</span>
+    </label>
+
+    <hr style="border:none;border-top:1px solid var(--border, #30363d);margin:24px 0;" />
+
+    <h4 style="margin:8px 0 12px;">周时间段</h4>
+    <p class="muted small">每行定义一条窗口：勾选生效的星期、起止时间、动作（允许 / 禁止 / 限分钟）。优先级高的窗口优先匹配。结束时间早于开始时间表示跨夜（例如 22:00 → 06:00）。</p>
+
+    <div id="windowsBox">
+      <table class="table windows-table">
+        <thead>
+          <tr>
+            <th>周</th>
+            <th>起</th>
+            <th>止</th>
+            <th>动作</th>
+            <th>限额(分)</th>
+            <th>优先级</th>
+            <th>启用</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="windowsBody">
+          {% for w in windows %}
+          <tr class="window-row">
+            <td class="weekday-cell">
+              {% for bit, label in [(0,'一'),(1,'二'),(2,'三'),(3,'四'),(4,'五'),(5,'六'),(6,'日')] %}
+              <label class="weekday-pill"><input type="checkbox" class="weekday-cb" data-bit="{{ bit }}" {% if w.weekday_mask & (1 << bit) %}checked{% endif %} /><span>{{ label }}</span></label>
+              {% endfor %}
+            </td>
+            <td><input type="time" class="win-start" value="{{ w.start_time }}" /></td>
+            <td><input type="time" class="win-end" value="{{ w.end_time }}" /></td>
+            <td>
+              <select class="win-action">
+                <option value="allow" {% if w.action == 'allow' %}selected{% endif %}>允许</option>
+                <option value="deny" {% if w.action == 'deny' %}selected{% endif %}>禁止</option>
+                <option value="cap" {% if w.action == 'cap' %}selected{% endif %}>限分钟</option>
+              </select>
+            </td>
+            <td><input type="number" class="win-cap" min="1" max="1440" value="{{ w.cap_minutes or '' }}" /></td>
+            <td><input type="number" class="win-priority" value="{{ w.priority or 0 }}" /></td>
+            <td><input type="checkbox" class="win-enabled" {% if w.enabled %}checked{% endif %} /></td>
+            <td><button type="button" class="btn btn-sm btn-danger win-del">删</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="button" class="btn btn-sm" id="addWindowBtn">+ 新增窗口</button>
+    </div>
+
+    <div class="form-actions" style="margin-top:24px;">
+      <button type="submit" class="btn btn-primary">保存</button>
+      <a href="/web/rules" class="btn btn-ghost">取消</a>
+    </div>
+  </form>
+</div>
+
+<style>
+  .weekday-pill { display:inline-flex; align-items:center; gap:4px; padding:4px 8px; border:1px solid var(--border, #30363d); border-radius:999px; margin:2px; cursor:pointer; }
+  .weekday-pill input { margin:0; }
+  .windows-table th, .windows-table td { vertical-align: middle; }
+  .windows-table input[type="time"], .windows-table input[type="number"], .windows-table select { width: 100%; }
+  .field-inline { display:flex; gap:8px; align-items:center; }
+</style>
+
+<script>
+(function () {
+  const body = document.getElementById('windowsBody');
+  const input = document.getElementById('windowsJsonInput');
+  const form = document.getElementById('ruleEditForm');
+
+  function readRow(tr) {
+    const maskBits = Array.from(tr.querySelectorAll('.weekday-cb'))
+      .map(cb => cb.checked ? Number(cb.dataset.bit) : null)
+      .filter(x => x !== null);
+    const mask = maskBits.reduce((acc, b) => acc | (1 << b), 0) || 0x7F;
+    const action = tr.querySelector('.win-action').value;
+    const capStr = tr.querySelector('.win-cap').value;
+    return {
+      weekday_mask: mask,
+      start_time: tr.querySelector('.win-start').value,
+      end_time: tr.querySelector('.win-end').value,
+      action,
+      cap_minutes: action === 'cap' && capStr ? Number(capStr) : null,
+      priority: Number(tr.querySelector('.win-priority').value || 0),
+      enabled: tr.querySelector('.win-enabled').checked,
+    };
+  }
+
+  function snapshot() {
+    const rows = Array.from(body.querySelectorAll('.window-row')).map(readRow);
+    input.value = JSON.stringify(rows);
+  }
+
+  document.getElementById('addWindowBtn').addEventListener('click', () => {
+    const tr = document.createElement('tr');
+    tr.className = 'window-row';
+    tr.innerHTML = `
+      <td class="weekday-cell">${[0,1,2,3,4,5,6].map(b => `<label class="weekday-pill"><input type="checkbox" class="weekday-cb" data-bit="${b}" checked /><span>${['一','二','三','四','五','六','日'][b]}</span></label>`).join('')}</td>
+      <td><input type="time" class="win-start" value="09:00" /></td>
+      <td><input type="time" class="win-end" value="11:00" /></td>
+      <td><select class="win-action"><option value="allow">允许</option><option value="deny">禁止</option><option value="cap">限分钟</option></select></td>
+      <td><input type="number" class="win-cap" min="1" max="1440" /></td>
+      <td><input type="number" class="win-priority" value="0" /></td>
+      <td><input type="checkbox" class="win-enabled" checked /></td>
+      <td><button type="button" class="btn btn-sm btn-danger win-del">删</button></td>
+    `;
+    body.appendChild(tr);
+    bindRow(tr);
+  });
+
+  function bindRow(tr) {
+    tr.querySelector('.win-del').addEventListener('click', () => tr.remove());
+  }
+
+  body.querySelectorAll('.window-row').forEach(bindRow);
+
+  form.addEventListener('submit', snapshot);
+})();
+</script>
+{% endblock %}
