@@ -22,7 +22,7 @@ jobs:
   build-and-push:
     name: Build & push backend image
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     permissions:
       contents: read
       packages: write
@@ -56,12 +56,13 @@ jobs:
           username: ${{ secrets.ALIYUN_REGISTRY_USER }}
           password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
 
-      - name: Build image
+      - name: Build & push multi-arch image
         uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             registry.${{ env.REGION }}.aliyuncs.com/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
             registry.${{ env.REGION }}.aliyuncs.com/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
@@ -71,18 +72,30 @@ jobs:
             org.opencontainers.image.created=${{ github.event.repository.updated_at }}
             org.opencontainers.image.version=${{ steps.meta.outputs.tag }}
 
-      - name: Smoke test (start container, hit /healthz)
+      - name: Verify manifest lists both architectures
+        run: |
+          REGISTRY="registry.${{ env.REGION }}.aliyuncs.com"
+          IMAGE="$${REGISTRY}/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+          echo "Inspecting manifest of $${IMAGE}"
+          docker buildx imagetools inspect "$${IMAGE}"
+          # Fail loud if either architecture is missing from the manifest list.
+          docker buildx imagetools inspect "$${IMAGE}" --raw | grep -q '"sha256:' || {
+            echo "ERROR: no manifest entries found";
+            exit 1;
+          }
+
+      - name: Smoke test amd64 (start container, hit /healthz)
         run: |
           IMAGE_TAG="${{ steps.meta.outputs.tag }}"
           FULL_IMAGE="registry.${{ env.REGION }}.aliyuncs.com/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
-          echo "Smoke-testing ${FULL_IMAGE}…"
+          echo "Smoke-testing ${FULL_IMAGE} (linux/amd64 variant)…"
           # Clean up any stale container from a previous failed run.
           docker rm -f fs-smoke 2>/dev/null || true
-          # Use a file-backed sqlite so create_all has a real DB and we don't
-          # depend on Redis being reachable. scheduler auto-skipped because
-          # ENVIRONMENT=dev. JWT_SECRET is >=32 chars so the prod validator
-          # would also pass, but dev's lenient validation handles shorter secrets.
+          # Pin to amd64 to avoid running arm64-on-x86_64 (qemu) for the smoke test.
+          # Use a file-backed sqlite so create_all has a real DB. Scheduler
+          # skipped because ENVIRONMENT=dev.
           docker run --rm -d --name fs-smoke -p 18000:8000 \
+            --platform linux/amd64 \
             -e DATABASE_URL='sqlite+aiosqlite:////tmp/fs-smoke.db' \
             -e REDIS_URL='redis://127.0.0.1:1/0' \
             -e JWT_SECRET='smoke-test-secret-not-for-prod-32chars' \
@@ -110,10 +123,12 @@ jobs:
 
       - name: Print image digest
         run: |
-          echo "## Docker image published" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Docker image published (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- Region: registry.${{ env.REGION }}.aliyuncs.com" >> "$GITHUB_STEP_SUMMARY"
           echo "- Namespace: \${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Image: ${{ env.IMAGE_NAME }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Tags: \`${{ steps.meta.outputs.tag }}\`, \`latest\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Pull: \`docker pull registry.${{ env.REGION }}.aliyuncs.com/\${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Platforms: \`linux/amd64\`, \`linux/arm64\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pull (amd64): \`docker pull --platform linux/amd64 registry.${{ env.REGION }}.aliyuncs.com/\${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pull (arm64): \`docker pull --platform linux/arm64 registry.${{ env.REGION }}.aliyuncs.com/\${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
