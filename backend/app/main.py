@@ -164,6 +164,14 @@ async def healthz() -> dict:
     return {"status": "ok", "version": settings.app_version}
 
 
+@app.get("/health")
+async def health() -> dict:
+    """Alias of /healthz for legacy clients (the Windows ConfigUI 'test
+    connection' button calls /health). Same response shape; safe to keep
+    both routes wired."""
+    return {"status": "ok", "version": settings.app_version}
+
+
 @app.get("/readyz")
 async def readyz() -> dict:
     from sqlalchemy import text
