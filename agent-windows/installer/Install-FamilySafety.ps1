@@ -35,8 +35,13 @@ foreach ($p in $projects) {
     Copy-Item -Path "$release\*" -Destination $InstallDir -Recurse -Force
 }
 
-# 5. Copy FsHook.dll (native C++/CLI DLL) from x64 build
-$hookDll = Join-Path $SourceDir "src\FsHook\x64\Release\FsHook.dll"
+# 5. Copy FsHook.dll
+# FsHook is a managed C# project referenced transitively by FsQuiz, but
+# the other binaries (FsAgent, FsMonitor, ...) do not depend on it, so we
+# have to copy it explicitly here. The output lives under the standard
+# SDK-style bin\Release\net8.0-windows\ folder — there is no x64\
+# subdirectory.
+$hookDll = Join-Path $SourceDir "src\FsHook\bin\Release\net8.0-windows\FsHook.dll"
 if (Test-Path $hookDll) {
     Copy-Item $hookDll $InstallDir -Force
 } else {

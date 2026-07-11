@@ -25,7 +25,7 @@ Source: "..\src\FsMonitor\bin\Release\net8.0-windows\*"; DestDir: "{app}"; Flags
 Source: "..\src\FsQuiz\bin\Release\net8.0-windows\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 Source: "..\src\FsTray\bin\Release\net8.0-windows\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 Source: "..\src\FsCommon\bin\Release\net8.0-windows\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
-Source: "..\src\FsHook\x64\Release\FsHook.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\src\FsHook\bin\Release\net8.0-windows\FsHook.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
 ; Run the PowerShell installer to set up service + ACL
