@@ -73,21 +73,23 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.tag }}
 
       - name: Verify manifest lists both architectures
+        env:
+          VERIFY_IMAGE: registry.${{ env.REGION }}.aliyuncs.com/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
         run: |
-          REGISTRY="registry.${{ env.REGION }}.aliyuncs.com"
-          IMAGE="$${REGISTRY}/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
-          echo "Inspecting manifest of $${IMAGE}"
-          docker buildx imagetools inspect "$${IMAGE}"
-          # Fail loud if either architecture is missing from the manifest list.
-          docker buildx imagetools inspect "$${IMAGE}" --raw | grep -q '"sha256:' || {
-            echo "ERROR: no manifest entries found";
-            exit 1;
-          }
+          echo "Inspecting manifest of ${VERIFY_IMAGE}"
+          docker buildx imagetools inspect "${VERIFY_IMAGE}"
+          # Fail loud if the manifest list is missing entries.
+          if ! docker buildx imagetools inspect "${VERIFY_IMAGE}" --raw | grep -q '"sha256:'; then
+            echo "ERROR: no manifest entries found"
+            docker buildx imagetools inspect "${VERIFY_IMAGE}" --raw || true
+            exit 1
+          fi
 
       - name: Smoke test amd64 (start container, hit /healthz)
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.tag }}
+          FULL_IMAGE: registry.${{ env.REGION }}.aliyuncs.com/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
         run: |
-          IMAGE_TAG="${{ steps.meta.outputs.tag }}"
-          FULL_IMAGE="registry.${{ env.REGION }}.aliyuncs.com/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
           echo "Smoke-testing ${FULL_IMAGE} (linux/amd64 variant)…"
           # Clean up any stale container from a previous failed run.
           docker rm -f fs-smoke 2>/dev/null || true
