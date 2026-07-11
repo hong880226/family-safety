@@ -19,10 +19,14 @@
 #   5. Verifies everything is gone
 #
 # Notes:
-#   - Uses Windows Service store either way (FamilySafetyWatchdog is
-#     registered globally) — that's fine, the uninstall step cleans it up.
+#   - Uses Windows Service store either way (FamilySafety is registered
+#     globally) — that's fine, the uninstall step cleans it up.
 #   - Does NOT use the ProgramData\FamilySafety config dir for the test
 #     install path, but Uninstall-FamilySafety.ps1 still preserves it.
+#   - This script can only verify binary layout / service registration.
+#     It cannot set the parent password (that requires interactive GUI),
+#     so the service will refuse to actually start until FsConfigUI.exe
+#     is run manually on the test machine. That's expected.
 
 param(
     [Parameter(Mandatory=$true)] [string]$ArtifactDir,
@@ -43,8 +47,9 @@ if (-not $isAdmin) {
     exit 1
 }
 
-# 2. Verify required binaries are present
-$expectedDirs = @("FsWatchdog","FsWatchdogService","FsAgent","FsMonitor","FsQuiz","FsTray","FsCommon")
+# 2. Verify required binaries are present (FsWatchdog merged into FsWatchdogService;
+#    FsConfigUI is the parent setup GUI)
+$expectedDirs = @("FsWatchdogService","FsAgent","FsMonitor","FsQuiz","FsTray","FsCommon","FsConfigUI")
 $missing = @()
 foreach ($p in $expectedDirs) {
     $path = Join-Path $ArtifactDir "$p\bin\Release\net8.0-windows"
@@ -93,10 +98,10 @@ $checks = @(
     @{ Name = "InstallDir exists";       Pass = (Test-Path $installDir) },
     @{ Name = "FsAgent.exe on disk";     Pass = (Test-Path (Join-Path $installDir "FsAgent.exe")) },
     @{ Name = "FsWatchdogService.exe";   Pass = (Test-Path (Join-Path $installDir "FsWatchdogService.exe")) },
+    @{ Name = "FsConfigUI.exe on disk";  Pass = (Test-Path (Join-Path $installDir "FsConfigUI.exe")) },
     @{ Name = "FsHook.dll on disk";      Pass = (Test-Path (Join-Path $installDir "FsHook.dll")) },
     @{ Name = "agent.json written";      Pass = (Test-Path (Join-Path $env:ProgramData "FamilySafety\agent.json")) },
-    @{ Name = "Service registered";      Pass = [bool](Get-Service -Name "FamilySafetyWatchdog" -ErrorAction SilentlyContinue) },
-    @{ Name = "Scheduled task";          Pass = [bool](Get-ScheduledTask -TaskName "FamilySafety Watchdog (Scheduled)" -ErrorAction SilentlyContinue) },
+    @{ Name = "Service registered";      Pass = [bool](Get-Service -Name "FamilySafety" -ErrorAction SilentlyContinue) },
 )
 
 $failed = 0
@@ -128,8 +133,7 @@ Write-Host "===== STEP 4: POST-UNINSTALL VERIFY =====" -ForegroundColor Green
 
 $postChecks = @(
     @{ Name = "InstallDir removed";      Pass = -not (Test-Path $installDir) },
-    @{ Name = "Service removed";         Pass = -not (Get-Service -Name "FamilySafetyWatchdog" -ErrorAction SilentlyContinue) },
-    @{ Name = "Scheduled task removed";  Pass = -not (Get-ScheduledTask -TaskName "FamilySafety Watchdog (Scheduled)" -ErrorAction SilentlyContinue) },
+    @{ Name = "Service removed";         Pass = -not (Get-Service -Name "FamilySafety" -ErrorAction SilentlyContinue) },
 )
 
 $failed2 = 0

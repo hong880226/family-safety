@@ -1,76 +1,100 @@
-# FamilySafety Windows Agent - Build & Run
+# FamilySafety Windows Agent — Build & Install
 
 ## Prerequisites
 
-1. Windows 10/11 (64-bit)
-2. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-3. FamilySafety backend running (see `../deploy/README.md`)
+1. Windows 10/11 (64-bit) for installation
+2. A reachable FamilySafety backend (see `../deploy/README.md`)
+3. **For installation**: download the CI artifact zip from GitHub Actions
+   (`.github/workflows/agent-windows-build.yml`). It contains all binaries
+   and `FsHook.dll`.
+4. **For local development**: .NET 8 SDK (`winget install Microsoft.DotNet.SDK.8`).
 
-## Build
+## Build (CI)
 
-```cmd
+Push to `main` triggers `.github/workflows/agent-windows-build.yml`. After
+the run completes, download `familysafety-agent-windows-zip` from the
+Actions page. Extract it anywhere.
+
+The extracted artifact mirrors what the installer expects under
+`src/<Project>/bin/Release/net8.0-windows/`.
+
+## Build (local dev)
+
+```powershell
 cd agent-windows
 dotnet restore FamilySafety.sln
 dotnet build FamilySafety.sln -c Release
 ```
 
 Output binaries land in:
-- `src\FsWatchdog\bin\Release\net8.0-windows\FsWatchdog.exe`
+- `src\FsWatchdogService\bin\Release\net8.0-windows\FsWatchdogService.exe`
 - `src\FsAgent\bin\Release\net8.0-windows\FsAgent.exe`
 - `src\FsMonitor\bin\Release\net8.0-windows\FsMonitor.exe`
 - `src\FsQuiz\bin\Release\net8.0-windows\FsQuiz.exe`
 - `src\FsTray\bin\Release\net8.0-windows\FsTray.exe`
+- `src\FsConfigUI\bin\Release\net8.0-windows\FsConfigUI.exe`
 
-## First-run setup
+`FsWatchdog` is no longer built separately — its logic merged into
+`FsWatchdogService` (BackgroundService).
 
-1. Edit `src\FsWatchdog\bin\Release\net8.0-windows\agent-config.json`:
-   ```json
-   {
-     "backendUrl": "http://192.168.1.10:8000"
-   }
-   ```
-   Then copy this file to `%ProgramData%\FamilySafety\`:
-   ```cmd
-   mkdir %ProgramData%\FamilySafety
-   copy agent-config.json %ProgramData%\FamilySafety\agent.json
-   ```
+## Install
 
-2. Run FsWatchdog (which spawns the others):
-   ```cmd
-   src\FsWatchdog\bin\Release\net8.0-windows\FsWatchdog.exe
-   ```
+From an **elevated** PowerShell, in the unzipped artifact directory:
 
-3. FsAgent auto-registers the device on first run. Check logs:
-   ```cmd
-   type %ProgramData%\FamilySafety\logs\FsAgent.log
-   ```
-
-## Install as a service (P4 feature)
-
-When P4 adds the SCM service wrapper, you'll be able to:
-
-```cmd
-sc create FamilySafetyWatchdog binPath= "C:\Program Files\FamilySafety\FsWatchdog.exe" start= auto
-sc start FamilySafetyWatchdog
+```powershell
+.\installer\Install-FamilySafety.ps1 -BackendUrl "http://192.168.1.10:8000"
 ```
 
-## Development workflow
+The installer:
 
-```cmd
-# Live rebuild on changes
-dotnet watch build --project src/FsAgent
+1. Copies binaries + `FsHook.dll` to `C:\Program Files\FamilySafety`
+2. Writes `%ProgramData%\FamilySafety\agent.json`
+3. Applies the Users-deny NTFS ACL
+4. Registers the SCM service **`FamilySafety`** (binary `FsWatchdogService.exe`)
+5. Launches **`FsConfigUI.exe`** elevated — parent must enter the password
+6. If the password is set, starts the service; otherwise warns and exits
+7. Creates a desktop shortcut `FamilySafety 家长配置.lnk`
 
-# Run a single process for debugging
-dotnet run --project src/FsAgent -c Debug
+If you skip the GUI and dismiss the password prompt, the service is
+registered but will refuse to start children. Re-run `FsConfigUI.exe`
+manually, or:
+
+```powershell
+.\FsWatchdogService.exe set-password
+Start-Service FamilySafety
 ```
+
+## Uninstall
+
+```powershell
+.\installer\Uninstall-FamilySafety.ps1
+```
+
+This stops + deletes the service, kills any remaining children, removes
+the install dir and the desktop shortcut, but **preserves**
+`%ProgramData%\FamilySafety\` (config + logs + `parents.bin`). To wipe
+the parent credentials, delete `parents.bin` manually.
 
 ## Logs
 
 `%ProgramData%\FamilySafety\logs\*.log` — one file per process.
 
-Tail them with:
 ```powershell
-Get-Content $env:ProgramData\FamilySafety\logs\FsAgent.log -Tail 20 -Wait
+Get-Content $env:ProgramData\FamilySafety\logs\FsWatchdog.log -Tail 20 -Wait
+```
+
+## EventLog
+
+`FamilySafety` writes to the Windows Application log with three event IDs:
+
+- **7001** — start refused (parents.bin missing)
+- **7002** — child process died, restarted
+- **7003** — service stopping cleanly
+
+View with:
+
+```powershell
+Get-EventLog -LogName Application -Source FamilySafety -Newest 20
 ```
 
 ## Testing without Windows

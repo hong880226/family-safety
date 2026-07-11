@@ -1,11 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>FsWatchdog</RootNamespace>
-    <AssemblyName>FsWatchdog</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>FsConfigUI</RootNamespace>
+    <AssemblyName>FsConfigUI</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FsCommon\FsCommon.csproj" />

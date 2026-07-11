@@ -10,11 +10,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FsTray", "src\FsTray\FsTray
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FsCommon", "src\FsCommon\FsCommon.csproj", "{55555555-5555-5555-5555-555555555555}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FsWatchdog", "src\FsWatchdog\FsWatchdog.csproj", "{66666666-6666-6666-6666-666666666666}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FsWatchdogService", "src\FsWatchdogService\FsWatchdogService.csproj", "{77777777-7777-7777-7777-777777777777}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FsHook", "src\FsHook\FsHook.csproj", "{88888888-8888-8888-8888-888888888888}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FsConfigUI", "src\FsConfigUI\FsConfigUI.csproj", "{99999999-9999-9999-9999-999999999999}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -42,10 +42,6 @@ Global
 		{55555555-5555-5555-5555-555555555555}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{55555555-5555-5555-5555-555555555555}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{55555555-5555-5555-5555-555555555555}.Release|Any CPU.Build.0 = Release|Any CPU
-		{66666666-6666-6666-6666-666666666666}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{66666666-6666-6666-6666-666666666666}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{66666666-6666-6666-6666-666666666666}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{66666666-6666-6666-6666-666666666666}.Release|Any CPU.Build.0 = Release|Any CPU
 		{77777777-7777-7777-7777-777777777777}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{77777777-7777-7777-7777-777777777777}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{77777777-7777-7777-7777-777777777777}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -54,5 +50,9 @@ Global
 		{88888888-8888-8888-8888-888888888888}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{88888888-8888-8888-8888-888888888888}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{88888888-8888-8888-8888-888888888888}.Release|Any CPU.Build.0 = Release|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

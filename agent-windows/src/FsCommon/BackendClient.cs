@@ -71,6 +71,17 @@ public sealed class BackendClient
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<QuizSubmitResponse>(_jsonOpts, ct);
     }
+
+    /// <summary>
+    /// Cloud-sync the parent password blob so the parent dashboard can
+    /// verify / rotate the parent password remotely. Idempotent.
+    /// </summary>
+    public async Task<bool> SyncParentPasswordAsync(SyncParentPasswordRequest req, CancellationToken ct = default)
+    {
+        Auth();
+        var resp = await _http.PostAsJsonAsync("/api/v1/agent/sync-parent-password", req, _jsonOpts, ct);
+        return resp.IsSuccessStatusCode;
+    }
 }
 
 // ===== DTOs matching backend Pydantic schemas =====
@@ -169,4 +180,11 @@ public sealed class QuizSubmitResponse
     [JsonPropertyName("reward_minutes")] public int RewardMinutes { get; set; }
     [JsonPropertyName("explanations")] public List<string> Explanations { get; set; } = new();
     [JsonPropertyName("remaining_minutes")] public int? RemainingMinutes { get; set; }
+}
+
+public sealed class SyncParentPasswordRequest
+{
+    [JsonPropertyName("hash")] public string Hash { get; set; } = "";
+    [JsonPropertyName("salt")] public string Salt { get; set; } = "";
+    [JsonPropertyName("iterations")] public int Iterations { get; set; }
 }

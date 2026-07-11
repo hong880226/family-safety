@@ -7,6 +7,10 @@ namespace FsAgent;
 /// </summary>
 internal static class HeartbeatLoop
 {
+    // Sync the parent password blob to the cloud every N heartbeats.
+    // With cfg.HeartbeatIntervalSec = 30s and N = 10, that's every 5 minutes.
+    private const int ParentPasswordSyncEveryNHearbeats = 10;
+
     public static async Task RunAsync(
         BackendClient client,
         AgentConfig cfg,
@@ -16,6 +20,7 @@ internal static class HeartbeatLoop
         var startTime = DateTime.UtcNow;
         var usageBuffer = new List<UsageRecordIn>();
         var lastFlush = DateTime.UtcNow;
+        var heartbeatCount = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -53,11 +58,39 @@ internal static class HeartbeatLoop
                 Logger.Warn(ProcessNames.Agent, $"Heartbeat failed: {ex.Message}");
             }
 
+            heartbeatCount++;
+            if (heartbeatCount % ParentPasswordSyncEveryNHearbeats == 0)
+            {
+                await TrySyncParentPasswordAsync(client, ct);
+            }
+
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(cfg.HeartbeatIntervalSec), ct);
             }
             catch (OperationCanceledException) { break; }
+        }
+    }
+
+    private static async Task TrySyncParentPasswordAsync(BackendClient client, CancellationToken ct)
+    {
+        try
+        {
+            var blob = ParentAuth.ExportForSync();
+            if (blob == null) return; // not configured yet
+            var ok = await client.SyncParentPasswordAsync(new SyncParentPasswordRequest
+            {
+                Hash = blob.HashBase64,
+                Salt = blob.SaltBase64,
+                Iterations = blob.Iterations,
+            }, ct);
+            if (!ok)
+                Logger.Warn(ProcessNames.Agent, "Parent password cloud-sync returned non-success");
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            Logger.Warn(ProcessNames.Agent, $"Parent password cloud-sync failed: {ex.Message}");
         }
     }
 
