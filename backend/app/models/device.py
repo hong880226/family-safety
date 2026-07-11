@@ -49,3 +49,9 @@ class Device(Base):
     )
 
     family = relationship("Family", back_populates="devices")
+    screenshots = relationship(
+        "Screenshot",
+        back_populates="device",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="deepseek-chat")
     llm_timeout_seconds: int = 30
 
+    # Where uploaded screenshot bytes are persisted. Relative paths in the
+    # DB are joined onto this root. Default targets the conventional Linux
+    # deployment location; tests override via monkeypatch to a tmp dir.
+    screenshots_dir: str = Field(default="/var/lib/familysafety/screenshots")
+
     # CORS — defaults to empty; environment must opt in.
     # Annotated[..., NoDecode] tells pydantic-settings to skip JSON parsing
     # for this list field so our field_validator below can handle CSV/empty/"*".

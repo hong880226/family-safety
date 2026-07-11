@@ -17,12 +17,12 @@ from pathlib import Path
 
 import jinja2
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import current_member, require_parent_or_redirect
+from app.api.deps import current_member, require_parent, require_parent_or_redirect
 from app.db.session import get_db
 from app.core.security import (
     create_access_token,
@@ -37,6 +37,7 @@ from app.models.member import Member, MemberRole
 from app.models.notification_config import NotificationConfig
 from app.models.quiz_config import QuizConfig
 from app.models.rule import Rule
+from app.models.screenshot import Screenshot
 from app.models.suggestion import Suggestion, SuggestionStatus
 from app.models.toxic_alert import ToxicAlert
 from app.models.usage_record import UsageRecord
@@ -49,6 +50,7 @@ from app.schemas.web_inputs import (
 )
 from app.services.csrf import issue_csrf_token, validate_csrf_or_raise
 from app.services.mastery import get_all_mastery
+from app.services.screenshot_store import open_jpeg
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -816,3 +818,83 @@ async def change_password_post(
     member.password_hash = hash_password(new_password)
     await db.commit()
     return redirect_with_toast("/web/dashboard", "success", "密码已更新")
+
+
+# ---- Screenshot viewer (parent-only) ----
+#
+# Privacy boundary: only authenticated parents in the screenshot's family
+# can browse or fetch bytes. ``require_parent`` enforces auth; the explicit
+# ``family_id`` check on every read enforces isolation. The image bytes
+# themselves live on disk; we never expose the absolute path.
+
+_SCREENSHOTS_PAGE_LIMIT = 60
+
+
+@router.get("/screenshots", response_class=HTMLResponse)
+async def screenshots_page(
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(Screenshot)
+        .where(Screenshot.family_id == parent.family_id)
+        .order_by(Screenshot.taken_at.desc())
+        .limit(_SCREENSHOTS_PAGE_LIMIT)
+    )
+    shots = list((await db.execute(stmt)).scalars())
+    device_names: dict[int, str] = {}
+    out = []
+    for s in shots:
+        if s.device_id not in device_names:
+            d = await db.get(Device, s.device_id)
+            device_names[s.device_id] = d.name if d else "—"
+        out.append({
+            "id": s.id,
+            "taken_at": s.taken_at.strftime("%Y-%m-%d %H:%M") if s.taken_at else "",
+            "trigger_type": s.trigger_type,
+            "device_name": device_names[s.device_id],
+            "bytes_size": s.bytes_size,
+            "consumed": s.consumed,
+        })
+    return templates.TemplateResponse(
+        request,
+        "screenshots.html",
+        {
+            "request": request, "screenshots": out,
+            "version": _app_version(), "csrf_token": issue_csrf_token(request),
+        },
+    )
+
+
+@router.get("/screenshots/{shot_id}/image")
+async def screenshot_image(
+    shot_id: int,
+    parent: Member = Depends(require_parent),
+    db: AsyncSession = Depends(get_db),
+):
+    shot = await db.get(Screenshot, shot_id)
+    if not shot or shot.family_id != parent.family_id:
+        raise HTTPException(status_code=404, detail="screenshot not found")
+    # Flip consumed flag lazily. Best-effort — a read failure here shouldn't
+    # prevent the bytes from being served.
+    if not shot.consumed:
+        shot.consumed = True
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+    try:
+        data = await open_jpeg(shot.storage_path)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(status_code=404, detail="screenshot bytes missing")
+
+    media_type = (
+        "image/png" if shot.storage_path.endswith(".png") else "image/jpeg"
+    )
+    return Response(
+        data,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store"},
+    )

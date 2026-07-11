@@ -51,19 +51,20 @@ async def init_db() -> None:
     """
     from app.core.config import get_settings
     from app.models import (  # noqa: F401  ensure models are registered
+        content_rule,
+        device,
         family,
         member,
-        device,
-        rule,
+        notification_config,
         quiz_config,
-        usage_record,
         quiz_session,
-        content_rule,
-        toxic_alert,
+        rule,
+        screenshot,
         subject_mastery,
         suggestion,
+        toxic_alert,
+        usage_record,
         weekly_report,
-        notification_config,
     )
 
     settings = get_settings()

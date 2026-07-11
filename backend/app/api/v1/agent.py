@@ -2,16 +2,17 @@
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_device, get_db
+from app.api.deps import get_db, require_device
 from app.core.security import hash_api_key, hash_password, verify_api_key
 from app.models.device import Device
-from app.models.member import Member, MemberRole
 from app.models.family import Family
+from app.models.member import Member, MemberRole
 from app.models.rule import Rule
+from app.models.screenshot import Screenshot
 from app.models.usage_record import UsageRecord
 from app.schemas.agent import (
     HeartbeatRequest,
@@ -23,7 +24,7 @@ from app.schemas.agent import (
     UsageBatchRequest,
 )
 from app.services.resolver import resolve_member_for_device, resolve_rule
-from sqlalchemy import select
+from app.services.screenshot_store import save_jpeg
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -340,3 +341,74 @@ async def sync_parent_password(
     device.parent_pw_synced_at = now
     await db.commit()
     return SyncParentPasswordResponse(synced_at=now)
+
+
+# ---- Screenshot ingestion ----
+#
+# Privacy boundary (architecture §5.3): the v1.0 rule was "no screenshots".
+# This endpoint is the deliberate first crack — minimal backend only. There
+# is no agent-side capture yet (PR-D) and no parent-side trigger button yet
+# (PR-E); the agent can already POST here once those land.
+
+_ALLOWED_TRIGGER_TYPES = frozenset({"parent_now", "scheduled", "auto_toxic"})
+# 8 MiB hard cap. A full-HD JPEG rarely exceeds 2 MiB; 8 leaves headroom for
+# PNG screenshots from Edge/Chromium without making disk-fill DoS trivial.
+_SCREENSHOT_MAX_BYTES = 8 * 1024 * 1024
+# Anything smaller than this is almost certainly not a real screenshot —
+# reject early so an agent bug doesn't pollute the table with garbage rows.
+_SCREENSHOT_MIN_BYTES = 256
+_JPEG_MAGIC = b"\xff\xd8\xff"
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+@router.post("/screenshot", status_code=201)
+async def upload_screenshot(
+    file: UploadFile = File(...),
+    trigger_type: str = Form("parent_now"),
+    device: Device = Depends(require_device),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Accept a JPEG/PNG screenshot uploaded by an agent.
+
+    The agent authenticated itself with the device API key (``require_device``);
+    the family is therefore whichever family owns that device. Files are written
+    under ``settings.screenshots_dir`` keyed by uuid4 (no caller-controlled
+    path components), hashed, and recorded in ``device_screenshots``.
+    """
+    if trigger_type not in _ALLOWED_TRIGGER_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="invalid trigger_type"
+        )
+
+    payload = await file.read()
+    if len(payload) > _SCREENSHOT_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="image too large",
+        )
+    if len(payload) < _SCREENSHOT_MIN_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="image too small",
+        )
+    if not (payload.startswith(_JPEG_MAGIC) or payload.startswith(_PNG_MAGIC)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="not a valid JPEG/PNG",
+        )
+
+    rel_path, sha_hex, size = await save_jpeg(
+        device.family_id, device.id, payload
+    )
+    shot = Screenshot(
+        family_id=device.family_id,
+        device_id=device.id,
+        trigger_type=trigger_type,
+        bytes_size=size,
+        storage_path=rel_path,
+        sha256_hex=sha_hex,
+    )
+    db.add(shot)
+    await db.commit()
+    await db.refresh(shot)
+    return {"id": shot.id, "sha256_hex": sha_hex, "bytes": size}
