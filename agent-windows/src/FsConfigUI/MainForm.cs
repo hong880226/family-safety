@@ -292,7 +292,7 @@ public sealed class MainForm : Form
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "sc.exe",
-                Arguments = $"start {Program.ServiceName}",
+                Arguments = "start FamilySafety",
                 UseShellExecute = true,
                 Verb = "runas",
                 CreateNoWindow = true,
@@ -312,11 +312,4 @@ public sealed class MainForm : Form
         _lblStatus.Text = text;
         _lblStatus.ForeColor = isError ? Color.Firebrick : Color.SeaGreen;
     }
-}
-
-internal static class Program
-{
-    // Must match FsWatchdogService.Program.ServiceName. Local constant
-    // because both projects have their own internal `Program` class.
-    public const string ServiceName = "FamilySafety";
 }
