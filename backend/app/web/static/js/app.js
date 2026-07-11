@@ -1,6 +1,6 @@
 /* FamilySafety — frontend utility bundle
- * Toast (P5), mobile sidebar, client-side form validation (P3).
- * Plain ES2017, no build step needed. */
+ * Toast (P5), mobile sidebar, client-side form validation (P3),
+ * keyboard a11y (K), skeleton loader (S). Plain ES2017. */
 (function () {
   "use strict";
 
@@ -15,16 +15,25 @@
     if (!host) return;
     const el = document.createElement("div");
     el.className = "toast toast-" + (kind || "info");
-    el.setAttribute("role", "status");
+    el.setAttribute("role", kind === "error" ? "alert" : "status");
     el.textContent = msg;
+    // Click to dismiss (K3).
+    el.style.cursor = "pointer";
+    el.title = "点击关闭";
+    el.addEventListener("click", () => dismiss(el));
     host.appendChild(el);
     const ttl = ms || (kind === "error" ? 5000 : 3000);
-    setTimeout(() => {
-      el.classList.add("is-leaving");
-      setTimeout(() => el.remove(), 220);
-    }, ttl);
+    const timer = setTimeout(() => dismiss(el), ttl);
+    el.dataset.timer = String(timer);
+  }
+  function dismiss(el) {
+    clearTimeout(Number(el.dataset.timer));
+    if (el.classList.contains("is-leaving")) return;
+    el.classList.add("is-leaving");
+    setTimeout(() => el.remove(), 220);
   }
   window.showToast = showToast;
+  window.dismissToast = dismiss;
 
   // Parse a flash via cookie / htmx header.
   document.addEventListener("htmx:afterRequest", function (e) {
@@ -72,12 +81,19 @@
       if (other && other.value && v !== other.value) err = "两次密码不一致";
     }
     const errEl = field.querySelector(".field-error");
+    if (errEl && !errEl.id) errEl.id = "err-" + Math.random().toString(36).slice(2, 9);
     if (err) {
       field.classList.add("is-invalid");
-      if (errEl) errEl.textContent = err;
+      input.setAttribute("aria-invalid", "true");
+      if (errEl) {
+        input.setAttribute("aria-describedby", errEl.id);
+        errEl.textContent = err;
+      }
       return false;
     }
     field.classList.remove("is-invalid");
+    input.removeAttribute("aria-invalid");
+    input.removeAttribute("aria-describedby");
     if (errEl) errEl.textContent = "";
     return true;
   }
@@ -128,4 +144,56 @@
       e.stopImmediatePropagation();
     }
   }, true);
+
+  // ==== Keyboard a11y (K) ================================================
+  // Esc: close mobile sidebar / dismiss all toasts.
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      const sb = document.getElementById("sidebar");
+      if (sb && sb.classList.contains("is-open")) sb.classList.remove("is-open");
+      if (stack) {
+        stack.querySelectorAll(".toast").forEach((el) => dismiss(el));
+      }
+      // Close inline confirm dialogs are browser-handled; nothing more.
+    }
+    // Slash focuses first search-like input.
+    if (e.key === "/" && !e.target.matches("input, select, textarea, [contenteditable]")) {
+      const first = document.querySelector('input[type="search"], input[name="q"], input[name="query"]');
+      if (first) {
+        e.preventDefault();
+        first.focus();
+        first.select && first.select();
+      }
+    }
+  }, true);
+
+  // ==== Skeleton loader (S) ==============================================
+  // Expose helper for templates that want to show a shimmer while a
+  // htmx swap is in flight.
+  window.fsShowSkeleton = function (target, label) {
+    if (!target) return;
+    target.classList.add("is-skeleton");
+    if (!target.querySelector(".skeleton-shimmer")) {
+      const sh = document.createElement("div");
+      sh.className = "skeleton-shimmer";
+      sh.setAttribute("aria-hidden", "true");
+      sh.textContent = label || "";
+      target.appendChild(sh);
+    }
+  };
+  window.fsHideSkeleton = function (target) {
+    if (!target) return;
+    target.classList.remove("is-skeleton");
+    const sh = target.querySelector(".skeleton-shimmer");
+    if (sh) sh.remove();
+  };
+
+  // After every successful htmx swap, strip skeleton flags.
+  document.addEventListener("htmx:afterSwap", function (e) {
+    if (e.detail && e.detail.target) {
+      e.detail.target.classList.remove("is-skeleton");
+      e.detail.target.querySelectorAll && e.detail.target.querySelectorAll(".skeleton-shimmer")
+        .forEach((n) => n.remove());
+    }
+  });
 })();

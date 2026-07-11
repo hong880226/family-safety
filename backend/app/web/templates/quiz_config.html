@@ -5,31 +5,50 @@
 <div class="grid-2">
   <div class="panel">
     <h3 class="panel-title">选择成员</h3>
+    {% if members %}
     <form method="get" action="/web/quiz-config">
-      <select name="member_id" onchange="this.form.submit()">
-        <option value="">— 选择 —</option>
-        {% for m in members %}
-          <option value="{{ m.id }}" {% if member and member.id==m.id %}selected{% endif %}>{{ m.name }}</option>
-        {% endfor %}
-      </select>
+      <label class="field">
+        <span>孩子</span>
+        <select name="member_id" onchange="this.form.submit()">
+          <option value="">— 选择 —</option>
+          {% for m in members %}
+            <option value="{{ m.id }}" {% if member and member.id==m.id %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="field-hint">切换孩子以查看或修改对应的答题参数。</div>
+      </label>
+      <noscript><button type="submit" class="btn btn-primary">切换</button></noscript>
     </form>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">👶</div>
+      <h4 class="empty-title">还没有孩子</h4>
+      <p class="empty-desc">先在 <a href="/web/members">成员</a> 里添加孩子,然后再来这里配置。</p>
+    </div>
+    {% endif %}
   </div>
   {% if member %}
   <div class="panel">
     <h3 class="panel-title">为 {{ member.name }} 配置</h3>
-    <form method="post" action="/web/quiz-config" class="form">
+    <form method="post" action="/web/quiz-config" class="form" novalidate>
       <input type="hidden" name="member_id" value="{{ member.id }}" />
       <label class="field">
         <span>每次答题数</span>
-        <input type="number" name="total_questions" min="1" max="20" value="{{ cfg.total_questions }}" />
+        <input type="number" name="total_questions" min="1" max="20" value="{{ cfg.total_questions }}" required />
+        <div class="field-hint">每次触发答题时出几道题(1–20)。</div>
+        <div class="field-error"></div>
       </label>
       <label class="field">
-        <span>难度等级 (1-5)</span>
-        <input type="number" name="difficulty" min="1" max="5" value="{{ cfg.difficulty }}" />
+        <span>难度等级 (1–5)</span>
+        <input type="number" name="difficulty" min="1" max="5" value="{{ cfg.difficulty }}" required />
+        <div class="field-hint">1 = 最简单,5 = 拔高题。</div>
+        <div class="field-error"></div>
       </label>
       <label class="field">
-        <span>学科（逗号分隔）</span>
-        <input name="subjects" value="{{ cfg.subjects|join(',') }}" />
+        <span>学科(逗号分隔)</span>
+        <input name="subjects" required maxlength="200" value="{{ cfg.subjects|join(',') }}" placeholder="math,chinese,english" />
+        <div class="field-hint">如 <code>math,chinese,english</code>。</div>
+        <div class="field-error"></div>
       </label>
       <label class="field">
         <span>分布模式</span>
@@ -38,8 +57,12 @@
           <option value="auto" {% if cfg.distribution_mode=='auto' %}selected{% endif %}>自动平均</option>
           <option value="weakness_first" {% if cfg.distribution_mode=='weakness_first' %}selected{% endif %}>弱项优先</option>
         </select>
+        <div class="field-hint">"弱项优先" 会优先出最近准确率低的学科。</div>
       </label>
-      <button type="submit" class="btn btn-primary">保存</button>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="/web/quiz-config" class="btn btn-ghost">取消</a>
+      </div>
     </form>
   </div>
   {% endif %}

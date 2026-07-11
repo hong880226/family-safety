@@ -2,22 +2,64 @@
 {% block heading %}推送设置{% endblock %}
 {% set active = 'settings' %}
 {% block content %}
-<div class="panel">
-  <form method="post" action="/web/settings" class="form">
+<form method="post" action="/web/settings" class="form" novalidate>
+  <div class="panel" style="max-width: 640px;">
     <h3 class="panel-title">邮件推送</h3>
-    <label class="field"><span>收件邮箱</span><input name="email" type="email" value="{{ cfg.email or '' }}" /></label>
-    <label class="field"><span>SMTP 主机</span><input name="smtp_host" value="{{ cfg.smtp_host or '' }}" /></label>
-    <label class="field"><span>SMTP 端口</span><input name="smtp_port" type="number" value="{{ cfg.smtp_port or 587 }}" /></label>
-    <label class="field"><span>SMTP 用户名</span><input name="smtp_user" value="{{ cfg.smtp_user or '' }}" /></label>
-    <label class="field"><span>SMTP 密码</span><input name="smtp_password" type="password" /></label>
-    <label class="field"><span>毒视频告警阈值 (0-1)</span><input name="toxic_threshold" type="number" step="0.05" min="0" max="1" value="{{ cfg.toxic_alert_threshold or 0.7 }}" /></label>
-    <label class="checkbox"><input type="checkbox" name="enable_weekly_email" {% if cfg.enable_weekly_email %}checked{% endif %} /> 启用每周邮件推送</label>
-    <label class="checkbox"><input type="checkbox" name="enable_toxic_alert" {% if cfg.enable_toxic_alert %}checked{% endif %} /> 启用毒视频即时告警</label>
+    <label class="field">
+      <span>收件邮箱</span>
+      <input name="email" type="email" maxlength="254" value="{{ cfg.email or '' }}" placeholder="parent@example.com" />
+      <div class="field-hint">接收每周周报和告警邮箱地址。</div>
+      <div class="field-error"></div>
+    </label>
+    <label class="field">
+      <span>SMTP 主机</span>
+      <input name="smtp_host" maxlength="200" value="{{ cfg.smtp_host or '' }}" placeholder="smtp.gmail.com" />
+    </label>
+    <label class="field">
+      <span>SMTP 端口</span>
+      <input name="smtp_port" type="number" min="1" max="65535" value="{{ cfg.smtp_port or 587 }}" />
+      <div class="field-hint">常用:SSL=465,TLS=587。</div>
+      <div class="field-error"></div>
+    </label>
+    <label class="field">
+      <span>SMTP 用户名</span>
+      <input name="smtp_user" maxlength="200" value="{{ cfg.smtp_user or '' }}" />
+    </label>
+    <label class="field">
+      <span>SMTP 密码</span>
+      <input name="smtp_password" type="password" maxlength="200" autocomplete="new-password" placeholder="{{ '已设置,留空保留' if has_smtp_pw else '' }}" />
+      <div class="field-hint">{% if has_smtp_pw %}已保存密码,如需修改请输入新密码,留空保留旧值。{% else %}通常为邮箱的"授权码"或应用专用密码。{% endif %}</div>
+      <div class="field-error"></div>
+    </label>
+    <label class="field">
+      <span>毒视频告警阈值 (0–1)</span>
+      <input name="toxic_threshold" type="number" step="0.05" min="0" max="1" value="{{ cfg.toxic_alert_threshold or 0.7 }}" required />
+      <div class="field-hint">LLM 给出的置信度超过该阈值会触发即时告警。0.5–0.8 比较平衡。</div>
+      <div class="field-error"></div>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="enable_weekly_email" {% if cfg.enable_weekly_email %}checked{% endif %} />
+      启用每周邮件推送
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="enable_toxic_alert" {% if cfg.enable_toxic_alert %}checked{% endif %} />
+      启用毒视频即时告警
+    </label>
+  </div>
 
-    <h3 class="panel-title">Webhook（企业微信/钉钉/Slack）</h3>
-    <label class="field"><span>Webhook URL</span><input name="webhook_url" value="{{ cfg.webhook_url or '' }}" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." /></label>
+  <div class="panel" style="max-width: 640px;">
+    <h3 class="panel-title">Webhook(企业微信 / 钉钉 / Slack)</h3>
+    <label class="field">
+      <span>Webhook URL</span>
+      <input name="webhook_url" type="url" maxlength="500" value="{{ cfg.webhook_url or '' }}" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
+      <div class="field-hint">支持企业微信、钉钉、Slack 等接收 JSON POST 的机器人地址。</div>
+      <div class="field-error"></div>
+    </label>
+  </div>
 
+  <div class="form-actions">
     <button type="submit" class="btn btn-primary">保存</button>
-  </form>
-</div>
+    <a href="/web/dashboard" class="btn btn-ghost">取消</a>
+  </div>
+</form>
 {% endblock %}

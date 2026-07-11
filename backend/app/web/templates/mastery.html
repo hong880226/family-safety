@@ -2,30 +2,56 @@
 {% block heading %}弱项分析{% endblock %}
 {% set active = 'mastery' %}
 {% block content %}
+{% if not members %}
+<div class="panel">
+  <div class="empty">
+    <div class="empty-icon">📈</div>
+    <h4 class="empty-title">还没有孩子</h4>
+    <p class="empty-desc">添加孩子并产生答题记录后才能分析弱项。</p>
+  </div>
+</div>
+{% else %}
+<div class="panel" style="max-width: 360px; margin-bottom: 18px;">
+  <h3 class="panel-title">选择孩子</h3>
+  <form method="get" action="/web/mastery">
+    <label class="field">
+      <span>孩子</span>
+      <select name="member_id" onchange="this.form.submit()">
+        {% for m in members %}
+          <option value="{{ m.id }}" {% if member and member.id==m.id %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button type="submit" class="btn btn-primary">切换</button></noscript>
+  </form>
+</div>
+{% if member %}
 <div class="grid-2">
   <div class="panel">
-    <h3 class="panel-title">{{ member.name }} 各科准确率</h3>
+    <h3 class="panel-title">{{ member.name }} · 各科准确率</h3>
     {% if mastery %}
-    <div class="radar-wrap">
-      <table class="table">
-        <thead><tr><th>学科</th><th>已答题数</th><th>正确率</th><th>是否弱项</th></tr></thead>
-        <tbody>
-          {% for subj, m in mastery.items() %}
-          <tr>
-            <td>{{ subj }}</td>
-            <td>{{ m.total }}</td>
-            <td>
-              <div class="bar-mini"><div class="bar-mini-fill" style="width: {{ m.accuracy*100 }}%; background: {{ m.is_weak and 'var(--warn)' or 'var(--ok)' }}"></div></div>
-              <span class="muted"> {{ (m.accuracy*100)|round(0) }}%</span>
-            </td>
-            <td>{% if m.is_weak %}<span class="badge badge-warn">弱项</span>{% else %}<span class="badge badge-ok">良好</span>{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <table class="table">
+      <thead><tr><th>学科</th><th>已答题数</th><th>正确率</th><th>状态</th></tr></thead>
+      <tbody>
+        {% for subj, m in mastery.items() %}
+        <tr>
+          <td>{{ subj }}</td>
+          <td>{{ m.total }}</td>
+          <td>
+            <div class="bar-mini"><div class="bar-mini-fill" style="width: {{ m.accuracy*100 }}%; background: {{ m.is_weak and 'var(--warn)' or 'var(--ok)' }}"></div></div>
+            <span class="muted"> {{ (m.accuracy*100)|round(0) }}%</span>
+          </td>
+          <td>{% if m.is_weak %}<span class="badge badge-warn">弱项</span>{% else %}<span class="badge badge-ok">良好</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% else %}
-    <p class="muted">还没有答题数据。让孩子多答题后再来看。</p>
+    <div class="empty">
+      <div class="empty-icon">🎓</div>
+      <h4 class="empty-title">还没有答题数据</h4>
+      <p class="empty-desc">让孩子多答题后再来查看。</p>
+    </div>
     {% endif %}
   </div>
 
@@ -42,4 +68,6 @@
   </div>
   {% endif %}
 </div>
+{% endif %}
+{% endif %}
 {% endblock %}

@@ -11,6 +11,7 @@ Security notes:
 """
 from __future__ import annotations
 
+import urllib.parse
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -49,8 +50,24 @@ from app.schemas.web_inputs import (
 from app.services.csrf import issue_csrf_token, validate_csrf_or_raise
 from app.services.mastery import get_all_mastery
 from app.core.config import get_settings
+from app.web import redirect_with_toast
 
 settings = get_settings()
+
+
+def _set_flash_toast(response, kind: str, message: str) -> None:
+    """Attach an X-Flash-Toast header so the client can pop a toast on the
+    next page. Format: ``<kind>|<urlencoded-message>``."""
+    try:
+        response.headers["X-Flash-Toast"] = f"{kind}|{urllib.parse.quote(message)}"
+    except Exception:
+        pass
+
+
+def redirect_with_toast(location: str, kind: str, message: str, status_code: int = 302):
+    resp = RedirectResponse(location, status_code=status_code)
+    _set_flash_toast(resp, kind, message)
+    return resp
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 _templates_env = jinja2.Environment(
@@ -271,7 +288,7 @@ async def members_add(
     )
     db.add(new_m)
     await db.commit()
-    return RedirectResponse("/web/members", status_code=302)
+    return redirect_with_toast("/web/members", "success", f"已添加成员 {form.name}")
 
 
 @router.get("/members/{member_id}/edit", response_class=HTMLResponse)
@@ -318,7 +335,7 @@ async def members_edit_post(
     target.grade = form.grade
     target.windows_username = form.windows_username or None
     await db.commit()
-    return RedirectResponse("/web/members", status_code=302)
+    return redirect_with_toast("/web/members", "success", f"已更新 {form.name}")
 
 
 @router.post("/members/{member_id}/delete")
@@ -336,9 +353,11 @@ async def members_delete(
     )
     target = (await db.execute(stmt)).scalar_one_or_none()
     if target:
+        name = target.name
         await db.delete(target)
         await db.commit()
-    return RedirectResponse("/web/members", status_code=302)
+        return redirect_with_toast("/web/members", "success", f"已删除成员 {name}")
+    return redirect_with_toast("/web/members", "warn", "未找到该成员")
 
 
 @router.get("/devices", response_class=HTMLResponse)
@@ -381,9 +400,11 @@ async def devices_delete(
     await validate_csrf_or_raise(request)
     d = await db.get(Device, device_id)
     if d and d.family_id == member.family_id:
+        name = d.name
         d.revoked = True
         await db.commit()
-    return RedirectResponse("/web/devices", status_code=302)
+        return redirect_with_toast("/web/devices", "success", f"已撤销设备 {name}")
+    return redirect_with_toast("/web/devices", "warn", "设备不存在或无权访问")
 
 
 @router.get("/rules", response_class=HTMLResponse)
@@ -483,8 +504,15 @@ async def quiz_config_save(
         cfg.subjects = [x.strip() for x in form.subjects.split(",") if x.strip()]
         cfg.distribution_mode = form.distribution_mode
         await db.commit()
-    return RedirectResponse(
-        f"/web/quiz-config?member_id={form.member_id}", status_code=302,
+        return redirect_with_toast(
+            f"/web/quiz-config?member_id={form.member_id}",
+            "success",
+            "答题配置已保存",
+        )
+    return redirect_with_toast(
+        f"/web/quiz-config?member_id={form.member_id}",
+        "warn",
+        "该成员还没有启用的规则,未保存",
     )
 
 
@@ -565,7 +593,7 @@ async def content_rules_add(
     )
     db.add(r)
     await db.commit()
-    return RedirectResponse("/web/content-rules", status_code=302)
+    return redirect_with_toast("/web/content-rules", "success", f"已添加规则 {form.pattern[:24]}")
 
 
 @router.get("/toxic-alerts", response_class=HTMLResponse)
@@ -621,7 +649,8 @@ async def toxic_alert_ack(
     if a:
         a.parent_acknowledged = True
         await db.commit()
-    return RedirectResponse("/web/toxic-alerts", status_code=302)
+        return redirect_with_toast("/web/toxic-alerts", "success", "告警已确认")
+    return redirect_with_toast("/web/toxic-alerts", "warn", "告警不存在")
 
 
 @router.get("/weekly-reports", response_class=HTMLResponse)
@@ -703,7 +732,7 @@ async def settings_save(
     cfg.enable_toxic_alert = form.enable_toxic_alert
     cfg.toxic_alert_threshold = form.toxic_threshold
     await db.commit()
-    return RedirectResponse("/web/settings", status_code=302)
+    return redirect_with_toast("/web/settings", "success", "推送设置已保存")
 
 
 # ---- Parent profile: change password ----
@@ -772,4 +801,4 @@ async def change_password_post(
             )
     member.password_hash = hash_password(new_password)
     await db.commit()
-    return RedirectResponse("/web/dashboard", status_code=302)
+    return redirect_with_toast("/web/dashboard", "success", "密码已更新")

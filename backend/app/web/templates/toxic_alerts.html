@@ -3,25 +3,31 @@
 {% set active = 'toxic' %}
 {% block content %}
 <div class="panel">
+  <h3 class="panel-title">
+    <span>最近的告警</span>
+    <span class="panel-title-actions muted small">最近 50 条</span>
+  </h3>
   {% if alerts %}
   <table class="table">
     <thead><tr><th>时间</th><th>成员</th><th>应用</th><th>窗口标题</th><th>分类</th><th>置信度</th><th>原因</th><th>已通知</th><th></th></tr></thead>
     <tbody>
       {% for a in alerts %}
       <tr>
-        <td>{{ a.created_at }}</td>
+        <td class="muted">{{ a.created_at }}</td>
         <td>{{ a.member_name }}</td>
         <td>{{ a.app_name }}</td>
         <td>{{ a.window_title[:50] }}</td>
         <td><span class="badge badge-warn">{{ a.category }}</span></td>
         <td>{{ (a.confidence*100)|round(0) }}%</td>
         <td>{{ a.reason or '—' }}</td>
-        <td>{% if a.notified %}✓{% else %}—{% endif %}</td>
+        <td>{% if a.notified %}<span class="badge badge-ok">✓</span>{% else %}—{% endif %}</td>
         <td>
           {% if not a.parent_acknowledged %}
-          <form method="post" action="/web/toxic-alerts/{{ a.id }}/ack" style="display:inline">
+          <form method="post" action="/web/toxic-alerts/{{ a.id }}/ack" class="inline-form">
             <button class="btn btn-sm">确认</button>
           </form>
+          {% else %}
+            <span class="muted small">已确认</span>
           {% endif %}
         </td>
       </tr>
@@ -29,7 +35,11 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">没有毒视频告警，孩子浏览内容正常 🎉</p>
+  <div class="empty">
+    <div class="empty-icon">🎉</div>
+    <h4 class="empty-title">没有毒视频告警</h4>
+    <p class="empty-desc">孩子浏览内容正常,继续保持。</p>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

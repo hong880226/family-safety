@@ -3,6 +3,11 @@
 {% set active = 'devices' %}
 {% block content %}
 <div class="panel">
+  <h3 class="panel-title">
+    <span>已注册设备</span>
+    <span class="panel-title-actions muted small">{{ devices|length }} 台</span>
+  </h3>
+  {% if devices %}
   <table class="table">
     <thead><tr><th>名称</th><th>成员</th><th>型号</th><th>最后在线</th><th>状态</th><th></th></tr></thead>
     <tbody>
@@ -11,14 +16,26 @@
         <td>{{ d.name }}</td>
         <td>{{ d.member_name or '—' }}</td>
         <td><code>{{ d.computer_model or '—' }}</code></td>
-        <td>{{ d.last_seen or '—' }}</td>
-        <td>{% if d.online %}<span class="badge badge-ok">在线</span>{% else %}<span class="badge badge-muted">离线</span>{% endif %}</td>
-        <td><form method="post" action="/web/devices/{{ d.id }}/delete" onsubmit="return confirm('确定撤销此设备？')"><button class="btn btn-sm btn-danger">撤销</button></form></td>
+        <td class="muted">{{ d.last_seen or '—' }}</td>
+        <td>
+          {% if d.online %}<span class="badge badge-ok">在线</span>{% else %}<span class="badge badge-muted">离线</span>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="/web/devices/{{ d.id }}/delete" class="inline-form">
+            <button class="btn btn-sm btn-danger"
+                    data-confirm="撤销设备 {{ d.name }}?此设备的 Agent 不再上报新数据。">撤销</button>
+          </form>
+        </td>
       </tr>
-      {% else %}
-      <tr><td colspan="6" class="muted center">还没有设备，请先在孩子电脑上运行 FsWatchdog</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">🖥️</div>
+    <h4 class="empty-title">还没有设备</h4>
+    <p class="empty-desc">在孩子的 Windows 电脑上安装并运行 FsWatchdog,它会自动注册到这里。</p>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
