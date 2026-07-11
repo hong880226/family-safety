@@ -1,0 +1,11 @@
+{
+  "matched_rule": null,
+  "matched_member_id": 7,
+  "commands": [
+    {
+      "type": "force_quiz",
+      "reason": "outside_window"
+    }
+  ],
+  "server_time": "2026-07-12T09:57:00.000Z"
+}

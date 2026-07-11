@@ -1,0 +1,10 @@
+{
+  "matched_rule": null,
+  "matched_member_id": 7,
+  "commands": [
+    {
+      "type": "lock_screen"
+    }
+  ],
+  "server_time": "2026-07-12T09:57:00.000Z"
+}

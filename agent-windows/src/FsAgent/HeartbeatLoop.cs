@@ -29,12 +29,15 @@ internal static class HeartbeatLoop
                 // Compute usage seconds from buffered records
                 var todaySec = ipc.GetTodayUsageSeconds();
                 var weekSec = ipc.GetWeekUsageSeconds();
+                var (fgApp, fgTitle) = ipc.GetCurrentForeground();
 
                 var hb = await client.HeartbeatAsync(new HeartbeatRequest
                 {
                     Timestamp = DateTime.UtcNow,
                     WindowsUsername = cfg.WindowsUsername,
                     ComputerModel = cfg.ComputerModel,
+                    CurrentApp = fgApp,
+                    WindowTitle = fgTitle,
                     UsedSecondsToday = todaySec,
                     UsedSecondsThisWeek = weekSec,
                     UptimeSeconds = (int)(DateTime.UtcNow - startTime).TotalSeconds
@@ -104,13 +107,55 @@ internal static class HeartbeatLoop
             switch (type)
             {
                 case "force_quiz":
-                    Logger.Info(ProcessNames.Agent, "Command: force_quiz received");
-                    QuizLauncher.Launch(cfg, reason: "overtime");
+                    {
+                        // Backend may pass reason = "overtime" | "outside_window"
+                        //   | "window_cap_exceeded" | "toxic_content". v1 used a
+                        // hardcoded "overtime"; PR-B forwards whatever the
+                        // backend sends, defaulting to "overtime" if absent
+                        // (older backends / extra-defensive).
+                        var reason = cmd.TryGetProperty("reason", out var rProp)
+                            ? (rProp.GetString() ?? "overtime")
+                            : "overtime";
+                        Logger.Info(ProcessNames.Agent,
+                            $"Command: force_quiz received (reason={reason})");
+                        QuizLauncher.Launch(cfg, reason);
+                    }
                     break;
                 case "show_warning":
-                    var msg = cmd.TryGetProperty("message", out var m) ? m.GetString() : null;
-                    Logger.Info(ProcessNames.Agent, $"Command: show_warning: {msg}");
-                    ipc.NotifyWarning(msg);
+                    {
+                        var msg = cmd.TryGetProperty("message", out var m)
+                            ? m.GetString() : null;
+                        Logger.Info(ProcessNames.Agent,
+                            $"Command: show_warning: {msg}");
+                        ipc.NotifyWarning(msg);
+                    }
+                    break;
+                case "lock_screen":
+                    Logger.Info(ProcessNames.Agent,
+                        "Command: lock_screen received");
+                    LockScreen.Lock();
+                    break;
+                case "shutdown":
+                    {
+                        var sdDelay = cmd.TryGetProperty("delay_seconds", out var sdD)
+                            ? sdD.GetInt32() : 60;
+                        Logger.Info(ProcessNames.Agent,
+                            $"Command: shutdown received (delay={sdDelay}s)");
+                        RemotePower.Shutdown(sdDelay);
+                    }
+                    break;
+                case "reboot":
+                    {
+                        var rbDelay = cmd.TryGetProperty("delay_seconds", out var rbD)
+                            ? rbD.GetInt32() : 60;
+                        Logger.Info(ProcessNames.Agent,
+                            $"Command: reboot received (delay={rbDelay}s)");
+                        RemotePower.Reboot(rbDelay);
+                    }
+                    break;
+                default:
+                    Logger.Warn(ProcessNames.Agent,
+                        $"Command: unknown type '{type}', ignoring");
                     break;
             }
         }

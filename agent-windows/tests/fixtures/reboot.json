@@ -1,0 +1,12 @@
+{
+  "matched_rule": null,
+  "matched_member_id": 7,
+  "commands": [
+    {
+      "type": "reboot",
+      "delay_seconds": 60,
+      "message": "家长远程重启"
+    }
+  ],
+  "server_time": "2026-07-12T09:57:00.000Z"
+}
