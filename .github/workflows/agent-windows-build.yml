@@ -55,8 +55,22 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $zip = "dist/familysafety-agent-windows-${{ github.sha }}.zip"
+          # Binaries: project Release outputs.
           Compress-Archive -Path agent-windows/src/*/bin/Release/net8.0-windows/* `
                           -DestinationPath $zip -Force
+          # Installer scripts (installer\Install-FamilySafety.ps1 expects
+          # `installer\` to sit next to `src\` under $SourceDir).
+          $installerDir = "agent-windows/installer"
+          if (Test-Path $installerDir) {
+              Compress-Archive -Path "$installerDir/*" -DestinationPath $zip -Update
+              Write-Host "Added installer/ to $zip"
+          } else {
+              Write-Warning "installer dir not found at $installerDir; zip will not contain Install-FamilySafety.ps1"
+          }
+          # Root README so the user sees run instructions after unzip.
+          if (Test-Path agent-windows/README.md) {
+              Compress-Archive -Path agent-windows/README.md -DestinationPath $zip -Update
+          }
           Write-Host "Created $zip"
           Get-ChildItem dist | Format-Table Name, Length
 
