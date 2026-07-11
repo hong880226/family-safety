@@ -12,7 +12,7 @@ Covers:
 """
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 
 import pytest
 from sqlalchemy import select
@@ -64,7 +64,7 @@ def _w(
 
 
 def _at(year: int, month: int, day: int, hour: int, minute: int = 0) -> datetime:
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    return datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
 # ---- Default policy ----
@@ -265,7 +265,7 @@ async def test_db_round_trip_resolves_windows():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # noqa: N806
     try:
         async with SessionLocal() as db:
             family = Family(name="f")

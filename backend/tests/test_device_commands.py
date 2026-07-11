@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -34,7 +34,6 @@ from app.models.device_command import DeviceCommand  # noqa: E402
 from app.models.family import Family  # noqa: E402
 from app.models.member import Member, MemberRole  # noqa: E402
 
-
 # ---- fixtures ----
 
 
@@ -50,7 +49,7 @@ async def engine():
 
 @pytest_asyncio.fixture
 async def db(engine):
-    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # noqa: N806
     async with SessionLocal() as session:
         yield session
 
@@ -60,7 +59,7 @@ async def client(engine):
     from app.db.session import get_db
 
     async def _override():
-        SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # noqa: N806
         async with SessionLocal() as s:
             try:
                 yield s
@@ -114,7 +113,7 @@ async def _make_family_with_device(
 
 def _heartbeat_body(**over) -> dict:
     body = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "windows_username": "child",
         "computer_model": "test-model",
         "used_seconds_today": 0,
@@ -160,7 +159,7 @@ async def test_heartbeat_skips_already_consumed_command(client, db):
     cmd = DeviceCommand(
         device_id=device.id, family_id=family.id,
         type="lock_screen", payload={}, created_by=parent.id,
-        consumed_at=datetime.now(timezone.utc),
+        consumed_at=datetime.now(UTC),
     )
     db.add(cmd)
     await db.commit()
@@ -182,7 +181,7 @@ async def test_heartbeat_skips_expired_command(client, db):
         device_id=device.id, family_id=family.id,
         type="shutdown", payload={"delay_seconds": 60},
         created_by=parent.id,
-        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
     )
     db.add(cmd)
     await db.commit()
@@ -242,6 +241,7 @@ async def test_cannot_enqueue_command_for_other_family_device(db):
     # Parent B tries to enqueue against dev_a. The web route's helper raises
     # 404; we mirror that logic here.
     from fastapi import HTTPException
+
     from app.web.routes import _resolve_parent_device_or_404
 
     with pytest.raises(HTTPException) as excinfo:
@@ -359,7 +359,7 @@ async def test_lock_screen_rejects_other_family_device(client, db):
     fb, pb, cb, dev_b, _ = await _make_family_with_device(db, name="beta")
 
     await _login_parent(client, pa)
-    r = await client.post(
+    await client.post(
         f"/web/devices/{dev_b.id}/lock-screen",
         headers={"X-CSRF-Token": client.headers["X-CSRF-Token"]},
         follow_redirects=False,

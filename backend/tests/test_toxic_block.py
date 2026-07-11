@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -58,17 +58,17 @@ async def engine():
 
 @pytest_asyncio.fixture
 async def db(engine):
-    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # noqa: N806
     async with SessionLocal() as session:
         yield session
 
 
 @pytest_asyncio.fixture
 async def client(engine, monkeypatch):
-    from app.db.session import get_db, AsyncSessionLocal
+    from app.db.session import get_db
 
     async def _override():
-        SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # noqa: N806
         async with SessionLocal() as s:
             try:
                 yield s
@@ -81,7 +81,7 @@ async def client(engine, monkeypatch):
     # Make the background task in heartbeat() see the same in-memory engine
     # as the request-scoped session. Without this, AsyncSessionLocal() opens
     # a fresh in-memory SQLite that has no tables and the task fails.
-    TestSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    TestSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # noqa: N806
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", TestSessionLocal)
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
@@ -115,7 +115,7 @@ async def _make_family_with_device(db: AsyncSession):
 
 def _hb(**over) -> dict:
     body = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "windows_username": "child",
         "computer_model": "test",
         "used_seconds_today": 0,
