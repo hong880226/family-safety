@@ -35,7 +35,27 @@
   window.showToast = showToast;
   window.dismissToast = dismiss;
 
-  // Parse a flash via cookie / htmx header.
+  // Parse a flash via htmx response header OR a one-shot cookie that the
+  // server can set alongside redirects. Browsers drop response headers
+  // across 302 navigations, so the cookie path is the reliable channel.
+  function consumeFlashCookie() {
+    const m = document.cookie.match(/(?:^|;\s*)fs_flash=([^;]+)/);
+    if (!m) return null;
+    // Erase the cookie so a refresh doesn't replay it.
+    document.cookie = "fs_flash=; Max-Age=0; path=/";
+    try {
+      const raw = decodeURIComponent(m[1]);
+      const sep = raw.indexOf("|");
+      if (sep < 0) return { kind: "info", msg: raw };
+      return { kind: raw.slice(0, sep), msg: raw.slice(sep + 1) };
+    } catch (_) { return null; }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const f = consumeFlashCookie();
+    if (f) showToast(f.kind, f.msg);
+  });
+
   document.addEventListener("htmx:afterRequest", function (e) {
     const xhr = e.detail && e.detail.xhr;
     if (!xhr) return;

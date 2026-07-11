@@ -56,10 +56,25 @@ settings = get_settings()
 
 
 def _set_flash_toast(response, kind: str, message: str) -> None:
-    """Attach an X-Flash-Toast header so the client can pop a toast on the
-    next page. Format: ``<kind>|<urlencoded-message>``."""
+    """Attach a one-shot flash cookie so the next page can pop a toast.
+
+    Browsers strip response headers across 302 navigations, so a header
+    alone is unreliable. The cookie is read + cleared by app.js on
+    DOMContentLoaded. Format: ``<kind>|<urlencoded-message>``.
+
+    Also sets X-Flash-Toast for htmx-driven swaps (no nav).
+    """
+    cookie_val = f"{kind}|{urllib.parse.quote(message)}"
     try:
-        response.headers["X-Flash-Toast"] = f"{kind}|{urllib.parse.quote(message)}"
+        response.set_cookie(
+            "fs_flash",
+            cookie_val,
+            max_age=30,
+            path="/",
+            httponly=False,  # must be readable by app.js
+            samesite="lax",
+        )
+        response.headers["X-Flash-Toast"] = cookie_val
     except Exception:
         pass
 
