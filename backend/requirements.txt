@@ -15,6 +15,8 @@ httpx==0.28.1
 loguru==0.7.3
 redis==5.2.1
 apscheduler==3.11.0
+jinja2>=3.1.4
+markupsafe>=2.1.5
 
 # Test deps
 pytest>=8.0.0

@@ -3,6 +3,8 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.api.deps import current_device, require_device, get_db
 from app.core.security import hash_api_key, hash_password

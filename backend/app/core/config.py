@@ -1,10 +1,10 @@
 """Application settings loaded from environment variables."""
 import secrets
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 30
 
     # CORS — defaults to empty; environment must opt in.
-    cors_origins: list[str] = Field(default_factory=list)
+    # Annotated[..., NoDecode] tells pydantic-settings to skip JSON parsing
+    # for this list field so our field_validator below can handle CSV/empty/"*".
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     cors_allow_credentials: bool = True
 
     @field_validator("cors_origins", mode="before")
