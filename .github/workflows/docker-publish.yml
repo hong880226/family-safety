@@ -76,23 +76,36 @@ jobs:
           IMAGE_TAG="${{ steps.meta.outputs.tag }}"
           FULL_IMAGE="registry.${{ env.REGION }}.aliyuncs.com/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
           echo "Smoke-testing ${FULL_IMAGE}…"
+          # Clean up any stale container from a previous failed run.
+          docker rm -f fs-smoke 2>/dev/null || true
+          # Use a file-backed sqlite so create_all has a real DB and we don't
+          # depend on Redis being reachable. scheduler auto-skipped because
+          # ENVIRONMENT=dev. JWT_SECRET is >=32 chars so the prod validator
+          # would also pass, but dev's lenient validation handles shorter secrets.
           docker run --rm -d --name fs-smoke -p 18000:8000 \
-            -e DATABASE_URL='sqlite+aiosqlite:///:memory:' \
-            -e REDIS_URL='redis://localhost:6379/0' \
-            -e JWT_SECRET='smoke-test-secret-not-for-prod' \
+            -e DATABASE_URL='sqlite+aiosqlite:////tmp/fs-smoke.db' \
+            -e REDIS_URL='redis://127.0.0.1:1/0' \
+            -e JWT_SECRET='smoke-test-secret-not-for-prod-32chars' \
             -e ENVIRONMENT='dev' \
             -e LLM_BASE_URL='http://mock' \
             -e LLM_API_KEY='mock' \
+            -e CORS_ORIGINS='http://localhost' \
             "${FULL_IMAGE}"
-          # wait up to 30s for /healthz
+          # wait up to 30s for /healthz; dump logs on failure for fast triage
+          ok=0
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:18000/healthz >/dev/null 2>&1; then
               echo "✓ /healthz OK after ${i}s"
+              ok=1
               break
             fi
             sleep 1
           done
-          curl -fsS http://localhost:18000/healthz || (echo "✗ smoke test failed"; docker logs fs-smoke; exit 1)
+          if [ "$ok" != "1" ]; then
+            echo "✗ smoke test failed — last 80 lines of container log:"
+            docker logs --tail=80 fs-smoke || true
+            exit 1
+          fi
           docker stop fs-smoke
 
       - name: Print image digest
