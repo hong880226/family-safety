@@ -9,21 +9,37 @@
   </h3>
   {% if devices %}
   <table class="table">
-    <thead><tr><th>名称</th><th>成员</th><th>型号</th><th>最后在线</th><th>状态</th><th></th></tr></thead>
+    <thead><tr><th>名称</th><th>成员</th><th>型号</th><th>最后在线</th><th>状态</th><th class="actions-col">远程操作</th></tr></thead>
     <tbody>
       {% for d in devices %}
+      {% set dn = d.name | e %}
       <tr>
-        <td>{{ d.name }}</td>
+        <td>{{ dn }}</td>
         <td>{{ d.member_name or '—' }}</td>
         <td><code>{{ d.computer_model or '—' }}</code></td>
         <td class="muted">{{ d.last_seen or '—' }}</td>
         <td>
           {% if d.online %}<span class="badge badge-ok">在线</span>{% else %}<span class="badge badge-muted">离线</span>{% endif %}
         </td>
-        <td>
-          <form method="post" action="/web/devices/{{ d.id }}/delete" class="inline-form">
-            <button class="btn btn-sm btn-danger"
-                    data-confirm="撤销设备 {{ d.name }}?此设备的 Agent 不再上报新数据。">撤销</button>
+        <td class="actions-col">
+          <form method="post" action="/web/devices/{{ d.id }}/lock-screen" class="row-inline-form" data-confirm="确认要远程锁定 {{ dn }} 吗?">
+            <button class="btn btn-sm" type="submit">锁屏</button>
+          </form>
+          <button class="btn btn-sm btn-warn"
+                  type="button"
+                  data-shutdown="{{ d.id }}"
+                  data-name="{{ dn }}"
+                  data-action="shutdown">关机</button>
+          <button class="btn btn-sm btn-warn"
+                  type="button"
+                  data-shutdown="{{ d.id }}"
+                  data-name="{{ dn }}"
+                  data-action="reboot">重启</button>
+          <form method="post" action="/web/devices/{{ d.id }}/capture-now" class="row-inline-form" data-capture-now="{{ dn }}">
+            <button class="btn btn-sm btn-primary" type="submit">截图</button>
+          </form>
+          <form method="post" action="/web/devices/{{ d.id }}/delete" class="row-inline-form" data-confirm="撤销设备 {{ dn }}?此设备的 Agent 不再上报新数据。">
+            <button class="btn btn-sm btn-danger" type="submit">撤销</button>
           </form>
         </td>
       </tr>
@@ -38,4 +54,28 @@
   </div>
   {% endif %}
 </div>
+{% endblock %}
+{% block modals %}{% include "_modals.html" %}{% endblock %}
+{% block scripts %}
+<script>
+  document.addEventListener("click", function (e) {
+    const t = e.target.closest("[data-shutdown]");
+    if (!t) return;
+    e.preventDefault();
+    const action = t.getAttribute("data-action") || "shutdown";
+    showShutdownModal(t.getAttribute("data-shutdown"), t.getAttribute("data-name"), action);
+  });
+
+  document.addEventListener("submit", function (e) {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const name = form.getAttribute("data-capture-now");
+    if (!name) return;
+    setTimeout(function () {
+      window.alert(
+        "截图指令已发送到 " + name + "\n客户端在下一次心跳(≤30 秒)内会上传画面。\n可在「截图」页面查看。"
+      );
+    }, 50);
+  }, true);
+</script>
 {% endblock %}

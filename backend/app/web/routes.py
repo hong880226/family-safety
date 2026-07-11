@@ -19,6 +19,7 @@ import jinja2
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1050,6 +1051,42 @@ def _enqueue_remote_command(
     db.add(cmd)
 
 
+# Hard upper bound for shutdown / reboot delay. An hour is generous: longer
+# counts as accidental input, not "tell the kid to come back tomorrow" — the
+# bedtime enforcement path covers that. Anything above is a 422.
+_REMOTE_DELAY_MAX = 3600
+_REMOTE_DELAY_DEFAULT = 60
+
+
+def _coerce_delay_seconds(raw: str | None) -> int:
+    """Parse + bound ``delay_seconds`` form value. Raises 422 on bad input."""
+    if raw is None or raw == "":
+        return _REMOTE_DELAY_DEFAULT
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="delay_seconds must be an integer")
+    if v < 0 or v > _REMOTE_DELAY_MAX:
+        raise HTTPException(
+            status_code=422,
+            detail=f"delay_seconds must be between 0 and {_REMOTE_DELAY_MAX}",
+        )
+    return v
+
+
+def _audit_remote_command(*, action: str, parent: Member, device: Device) -> None:
+    """Emit a single structured log line per parent-issued remote command.
+
+    Kept as a separate helper so the policy ("audit every remote command")
+    is enforced in exactly one place. ``created_by`` on the row already
+    records attribution in the DB; this is for ops/grep.
+    """
+    logger.info(
+        f"parent={parent.id} family={parent.family_id} "
+        f"action={action} device={device.id} device_name={device.name!r}"
+    )
+
+
 @router.post("/devices/{device_id}/lock-screen")
 async def device_lock_screen(
     device_id: int,
@@ -1062,6 +1099,7 @@ async def device_lock_screen(
     _enqueue_remote_command(
         db=db, device=d, parent=parent, cmd_type="lock_screen"
     )
+    _audit_remote_command(action="lock_screen", parent=parent, device=d)
     await db.commit()
     return redirect_with_toast("/web/devices", "success", f"已下发锁屏指令到 {d.name}")
 
@@ -1070,34 +1108,74 @@ async def device_lock_screen(
 async def device_shutdown(
     device_id: int,
     request: Request,
+    delay_seconds: str | None = Form(None),
     parent: Member = Depends(require_parent_or_redirect),
     db: AsyncSession = Depends(get_db),
 ):
     await validate_csrf_or_raise(request)
     d = await _resolve_parent_device_or_404(parent, device_id, db)
+    delay = _coerce_delay_seconds(delay_seconds)
     _enqueue_remote_command(
         db=db, device=d, parent=parent,
         cmd_type="shutdown",
-        payload={"delay_seconds": 60, "message": "家长远程关机"},
+        payload={"delay_seconds": delay, "message": "家长远程关机"},
     )
+    _audit_remote_command(action="shutdown", parent=parent, device=d)
     await db.commit()
-    return redirect_with_toast("/web/devices", "success", f"已下发关机指令到 {d.name}")
+    return redirect_with_toast(
+        "/web/devices", "success",
+        f"已下发关机指令到 {d.name}({delay} 秒后生效)",
+    )
 
 
 @router.post("/devices/{device_id}/reboot")
 async def device_reboot(
     device_id: int,
     request: Request,
+    delay_seconds: str | None = Form(None),
     parent: Member = Depends(require_parent_or_redirect),
     db: AsyncSession = Depends(get_db),
 ):
     await validate_csrf_or_raise(request)
     d = await _resolve_parent_device_or_404(parent, device_id, db)
+    delay = _coerce_delay_seconds(delay_seconds)
     _enqueue_remote_command(
         db=db, device=d, parent=parent,
         cmd_type="reboot",
-        payload={"delay_seconds": 60, "message": "家长远程重启"},
+        payload={"delay_seconds": delay, "message": "家长远程重启"},
     )
+    _audit_remote_command(action="reboot", parent=parent, device=d)
     await db.commit()
-    return redirect_with_toast("/web/devices", "success", f"已下发重启指令到 {d.name}")
+    return redirect_with_toast(
+        "/web/devices", "success",
+        f"已下发重启指令到 {d.name}({delay} 秒后生效)",
+    )
+
+
+@router.post("/devices/{device_id}/capture-now")
+async def device_capture_now(
+    device_id: int,
+    request: Request,
+    parent: Member = Depends(require_parent_or_redirect),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ask the agent to upload a fresh screenshot on its next heartbeat.
+
+    The actual ``Screenshot`` row is created when the agent POSTs the bytes
+    back to ``/api/v1/agent/screenshot`` with ``trigger_type=parent_now``. The
+    web ``/web/screenshots`` page will pick it up automatically.
+    """
+    await validate_csrf_or_raise(request)
+    d = await _resolve_parent_device_or_404(parent, device_id, db)
+    _enqueue_remote_command(
+        db=db, device=d, parent=parent,
+        cmd_type="capture_screen",
+        payload={"trigger_type": "parent_now"},
+    )
+    _audit_remote_command(action="capture_now", parent=parent, device=d)
+    await db.commit()
+    return redirect_with_toast(
+        "/web/devices", "success",
+        f"已下发截图指令到 {d.name},客户端将在下一次心跳内上传画面",
+    )
 

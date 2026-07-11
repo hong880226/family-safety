@@ -1,0 +1,68 @@
+{# Reusable dialogs. Rendered at end-of-body via {% block modals %}. #}
+<div class="fs-modal" id="shutdownModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="shutdownModalTitle">
+  <div class="fs-modal-backdrop" data-shutdown-close></div>
+  <div class="fs-modal-panel" role="document">
+    <header class="fs-modal-header">
+      <h3 id="shutdownModalTitle">远程关机 / 重启</h3>
+      <button type="button" class="fs-modal-close" data-shutdown-close aria-label="关闭">×</button>
+    </header>
+    <form id="shutdownForm" method="post" class="fs-modal-body" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+      <p class="muted small" id="shutdownDeviceLabel">对设备 <strong id="shutdownDeviceName"></strong> 执行操作。</p>
+      <label class="field">
+        <span>延迟秒数(0–3600,默认 60)</span>
+        <input type="number" name="delay_seconds" id="shutdownDelay" min="0" max="3600" step="1" value="60" />
+        <div class="field-error"></div>
+      </label>
+      <div class="alert alert-warn">用户端会在弹出 <code>shutdown</code> 提示后看到倒计时,可以取消。</div>
+      <div class="form-actions">
+        <button type="button" class="btn" data-shutdown-close>取消</button>
+        <button type="submit" class="btn btn-danger" id="shutdownSubmit">确认执行</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  // Exposed via window so devices.html + app.js can both poke it.
+  window.showShutdownModal = function (deviceId, deviceName, action) {
+    action = action || "shutdown";
+    const modal = document.getElementById("shutdownModal");
+    const form = document.getElementById("shutdownForm");
+    const title = document.getElementById("shutdownModalTitle");
+    const submit = document.getElementById("shutdownSubmit");
+    const nameEl = document.getElementById("shutdownDeviceName");
+    const delayEl = document.getElementById("shutdownDelay");
+    if (!modal || !form) return;
+    form.setAttribute("action", "/web/devices/" + encodeURIComponent(deviceId) + "/" + encodeURIComponent(action));
+    title.textContent = action === "reboot" ? "远程重启" : "远程关机";
+    submit.textContent = action === "reboot" ? "确认重启" : "确认关机";
+    if (nameEl) nameEl.textContent = deviceName || "";
+    if (delayEl && !delayEl.value) delayEl.value = 60;
+    modal.setAttribute("aria-hidden", "false");
+    modal.classList.add("is-open");
+    document.body.classList.add("fs-modal-open");
+    setTimeout(function () { delayEl && delayEl.focus(); delayEl && delayEl.select(); }, 30);
+  };
+
+  function _closeShutdownModal() {
+    const modal = document.getElementById("shutdownModal");
+    if (!modal) return;
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("fs-modal-open");
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-shutdown-close]")) {
+      e.preventDefault();
+      _closeShutdownModal();
+    }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      const modal = document.getElementById("shutdownModal");
+      if (modal && modal.classList.contains("is-open")) _closeShutdownModal();
+    }
+  });
+</script>
