@@ -1,0 +1,23 @@
+{% extends "_layout.html" %}
+{% block heading %}推送设置{% endblock %}
+{% set active = 'settings' %}
+{% block content %}
+<div class="panel">
+  <form method="post" action="/web/settings" class="form">
+    <h3 class="panel-title">邮件推送</h3>
+    <label class="field"><span>收件邮箱</span><input name="email" type="email" value="{{ cfg.email or '' }}" /></label>
+    <label class="field"><span>SMTP 主机</span><input name="smtp_host" value="{{ cfg.smtp_host or '' }}" /></label>
+    <label class="field"><span>SMTP 端口</span><input name="smtp_port" type="number" value="{{ cfg.smtp_port or 587 }}" /></label>
+    <label class="field"><span>SMTP 用户名</span><input name="smtp_user" value="{{ cfg.smtp_user or '' }}" /></label>
+    <label class="field"><span>SMTP 密码</span><input name="smtp_password" type="password" /></label>
+    <label class="field"><span>毒视频告警阈值 (0-1)</span><input name="toxic_threshold" type="number" step="0.05" min="0" max="1" value="{{ cfg.toxic_alert_threshold or 0.7 }}" /></label>
+    <label class="checkbox"><input type="checkbox" name="enable_weekly_email" {% if cfg.enable_weekly_email %}checked{% endif %} /> 启用每周邮件推送</label>
+    <label class="checkbox"><input type="checkbox" name="enable_toxic_alert" {% if cfg.enable_toxic_alert %}checked{% endif %} /> 启用毒视频即时告警</label>
+
+    <h3 class="panel-title">Webhook（企业微信/钉钉/Slack）</h3>
+    <label class="field"><span>Webhook URL</span><input name="webhook_url" value="{{ cfg.webhook_url or '' }}" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." /></label>
+
+    <button type="submit" class="btn btn-primary">保存</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "_layout.html" %}
+{% block heading %}设备{% endblock %}
+{% set active = 'devices' %}
+{% block content %}
+<div class="panel">
+  <table class="table">
+    <thead><tr><th>名称</th><th>成员</th><th>型号</th><th>最后在线</th><th>状态</th><th></th></tr></thead>
+    <tbody>
+      {% for d in devices %}
+      <tr>
+        <td>{{ d.name }}</td>
+        <td>{{ d.member_name or '—' }}</td>
+        <td><code>{{ d.computer_model or '—' }}</code></td>
+        <td>{{ d.last_seen or '—' }}</td>
+        <td>{% if d.online %}<span class="badge badge-ok">在线</span>{% else %}<span class="badge badge-muted">离线</span>{% endif %}</td>
+        <td><form method="post" action="/web/devices/{{ d.id }}/delete" onsubmit="return confirm('确定撤销此设备？')"><button class="btn btn-sm btn-danger">撤销</button></form></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted center">还没有设备，请先在孩子电脑上运行 FsWatchdog</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

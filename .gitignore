@@ -1,0 +1,79 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+.ENV/
+
+# ===== .NET =====
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.cachefile
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+ARM/
+ARM64/
+[Bb]uild[Ll]og.*
+*.[Pp]ublish.xml
+
+# ===== IDE =====
+.idea/
+.vs/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== Node (for dashboard future use) =====
+node_modules/
+.npm/
+
+# ===== Secrets & Local Config =====
+.env
+.env.local
+*.pem
+*.key
+config.local.json
+appsettings.Development.json
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Database =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Build Output =====
+dist/
+build/
+*.exe
+*.dll
+*.pdb
+installer/Output/
+
+# ===== OS =====
+.DS_Store
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/

@@ -1,0 +1,27 @@
+{% extends "_layout.html" %}
+{% block heading %}周报{% endblock %}
+{% set active = 'reports' %}
+{% block content %}
+<div class="panel">
+  {% if reports %}
+  <table class="table">
+    <thead><tr><th>周</th><th>成员</th><th>总时长</th><th>答题次数</th><th>正确率</th><th>推送</th><th></th></tr></thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td>{{ r.week_start }} ~ {{ r.week_end }}</td>
+        <td>{{ r.member_name }}</td>
+        <td>{{ r.summary.total_minutes or 0 }} 分钟</td>
+        <td>{{ r.summary.quiz_count or 0 }}</td>
+        <td>{{ ((r.summary.overall_accuracy or 0)*100)|round(0) }}%</td>
+        <td>{% if r.push_status=='sent' %}<span class="badge badge-ok">已发送</span>{% elif r.push_status=='failed' %}<span class="badge badge-warn">失败</span>{% else %}<span class="badge badge-muted">待推送</span>{% endif %}</td>
+        <td><a href="/web/weekly-reports/{{ r.id }}" class="btn btn-sm">查看</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">还没有周报。系统会在每周日 20:00 自动生成。</p>
+  {% endif %}
+</div>
+{% endblock %}

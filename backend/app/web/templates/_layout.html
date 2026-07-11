@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="{{ csrf_token or '' }}" />
+  <title>{% block title %}FamilySafety{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script src="/static/js/htmx.min.js" defer></script>
+  <script defer>
+    // Auto-attach CSRF token to htmx POST/PUT/DELETE requests.
+    document.addEventListener('htmx:configRequest', (e) => {
+      const t = document.querySelector('meta[name="csrf-token"]')?.content;
+      if (t) e.detail.headers['X-CSRF-Token'] = t;
+    });
+    // Auto-attach CSRF token to native <form method="post"> submissions.
+    document.addEventListener('submit', (e) => {
+      const form = e.target;
+      if (!form || form.method?.toLowerCase() !== 'post') return;
+      const t = document.querySelector('meta[name="csrf-token"]')?.content;
+      if (!t) return;
+      let inp = form.querySelector('input[name="csrf_token"]');
+      if (!inp) {
+        inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'csrf_token';
+        form.appendChild(inp);
+      }
+      inp.value = t;
+    }, true);
+  </script>
+</head>
+<body class="app-body">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo-mark small"></div>
+      <span>FamilySafety</span>
+    </div>
+    <nav class="nav">
+      <a href="/web/dashboard" class="nav-item {% if active=='dashboard' %}active{% endif %}">概览</a>
+      <a href="/web/members" class="nav-item {% if active=='members' %}active{% endif %}">成员</a>
+      <a href="/web/devices" class="nav-item {% if active=='devices' %}active{% endif %}">设备</a>
+      <a href="/web/rules" class="nav-item {% if active=='rules' %}active{% endif %}">规则</a>
+      <a href="/web/quiz-config" class="nav-item {% if active=='quiz' %}active{% endif %}">答题配置</a>
+      <a href="/web/mastery" class="nav-item {% if active=='mastery' %}active{% endif %}">弱项分析</a>
+      <a href="/web/content-rules" class="nav-item {% if active=='content' %}active{% endif %}">内容规则</a>
+      <a href="/web/toxic-alerts" class="nav-item {% if active=='toxic' %}active{% endif %}">毒视频告警</a>
+      <a href="/web/weekly-reports" class="nav-item {% if active=='reports' %}active{% endif %}">周报</a>
+      <a href="/web/settings" class="nav-item {% if active=='settings' %}active{% endif %}">推送设置</a>
+      <a href="/web/change-password" class="nav-item {% if active=='pwd' %}active{% endif %}">修改密码</a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="muted">v{{ version }}</span>
+      <a href="/web/logout" class="muted">退出</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="page-header">
+      <h1>{% block heading %}{% endblock %}</h1>
+      <div class="page-actions">{% block actions %}{% endblock %}</div>
+    </header>
+
+    <section class="page-body">
+      {% block content %}{% endblock %}
+    </section>
+  </main>
+</body>
+</html>

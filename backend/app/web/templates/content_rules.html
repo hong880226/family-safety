@@ -1,0 +1,60 @@
+{% extends "_layout.html" %}
+{% block heading %}内容规则{% endblock %}
+{% set active = 'content' %}
+{% block content %}
+<div class="grid-2">
+  <div class="panel">
+    <h3 class="panel-title">当前规则</h3>
+    <table class="table">
+      <thead><tr><th>类型</th><th>模式</th><th>分类</th><th>动作</th><th>启用</th><th></th></tr></thead>
+      <tbody>
+        {% for r in rules %}
+        <tr>
+          <td><span class="tag">{{ r.match_type }}</span></td>
+          <td><code>{{ r.pattern[:40] }}{% if r.pattern|length > 40 %}...{% endif %}</code></td>
+          <td>{{ r.category }}</td>
+          <td>{% if r.action=='block' %}<span class="badge badge-warn">拦截</span>{% elif r.action=='flag_for_llm' %}<span class="badge badge-warn">送 LLM</span>{% elif r.action=='warn' %}<span class="badge badge-info">警告</span>{% else %}<span class="badge badge-muted">监控</span>{% endif %}</td>
+          <td>{% if r.enabled %}✓{% else %}—{% endif %}</td>
+          <td><a href="/web/content-rules/{{ r.id }}/edit" class="btn btn-sm">编辑</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h3 class="panel-title">添加规则</h3>
+    <form method="post" action="/web/content-rules" class="form">
+      <label class="field"><span>匹配类型</span>
+        <select name="match_type">
+          <option value="process">进程名</option>
+          <option value="window_title">窗口标题</option>
+          <option value="domain">域名</option>
+          <option value="url">URL</option>
+        </select>
+      </label>
+      <label class="field"><span>正则表达式</span><input name="pattern" placeholder="例如 (?i)steam\.exe$" required /></label>
+      <label class="field"><span>分类</span>
+        <select name="category">
+          <option value="game_native">原生游戏</option>
+          <option value="game_web">网页游戏</option>
+          <option value="short_video">短视频</option>
+          <option value="video_long">长视频</option>
+          <option value="social">社交</option>
+          <option value="study">学习</option>
+          <option value="toxic_content">毒视频</option>
+          <option value="unknown">未知</option>
+        </select>
+      </label>
+      <label class="field"><span>动作</span>
+        <select name="action">
+          <option value="monitor">仅监控</option>
+          <option value="warn">警告</option>
+          <option value="block">拦截</option>
+          <option value="flag_for_llm">送 LLM 二次判定</option>
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary">添加</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

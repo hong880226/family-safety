@@ -1,0 +1,69 @@
+name: Build Windows Agent (zip artifact)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent-windows/**'
+      - '.github/workflows/agent-windows-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agent-windows/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Windows agent (Release)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore solution
+        shell: pwsh
+        run: |
+          dotnet restore agent-windows/FamilySafety.sln
+
+      - name: Build solution (Release)
+        shell: pwsh
+        run: |
+          dotnet build agent-windows/FamilySafety.sln -c Release --no-restore /p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::dotnet build failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+      - name: List produced binaries
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path agent-windows -Recurse -Filter "*.exe" |
+            Where-Object { $_.FullName -match "Release\\net8\.0-windows" } |
+            Tee-Object -FilePath build-outputs.txt
+          Write-Host "----- build-outputs.txt -----"
+          Get-Content build-outputs.txt
+
+      - name: Zip release artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $zip = "dist/familysafety-agent-windows-${{ github.sha }}.zip"
+          Compress-Archive -Path agent-windows/src/*/bin/Release/net8.0-windows/* `
+                          -DestinationPath $zip -Force
+          Write-Host "Created $zip"
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: familysafety-agent-windows-zip
+          path: dist/familysafety-agent-windows-*.zip
+          if-no-files-found: error
+          retention-days: 14

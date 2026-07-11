@@ -1,0 +1,19 @@
+# PATCH: Replace QuizForm.cs with hardened version that uses FsHook
+# (Manual merge step. Below is the diff instructions.)
+#
+# 1. Add `using FsHook;` at top of QuizForm.cs
+# 2. In constructor, after `RenderQuestion();`, add:
+#
+#       if (FsHook.KeyboardHook.Install())
+#           Text = Text + " [LOCKED]";
+#       FsHook.TaskManagerBlocker.Block();
+#
+# 3. In FormClosed event, add:
+#
+#       FsHook.TaskManagerBlocker.Unblock();
+#       FsHook.KeyboardHook.Uninstall();
+#
+# 4. For radio button clicks, suspend hook briefly so user can type letters:
+#       rb.CheckedChanged += (s, e) => FsHook.KeyboardHook.Suspend();
+#
+# This is the production-hardened version of QuizForm.cs.

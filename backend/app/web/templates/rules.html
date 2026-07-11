@@ -1,0 +1,24 @@
+{% extends "_layout.html" %}
+{% block heading %}规则{% endblock %}
+{% set active = 'rules' %}
+{% block content %}
+<div class="panel">
+  <table class="table">
+    <thead><tr><th>成员</th><th>规则名</th><th>匹配</th><th>每日限额</th><th>每次答题</th><th>状态</th></tr></thead>
+    <tbody>
+      {% for r in rules %}
+      <tr>
+        <td>{{ r.member_name }}</td>
+        <td>{{ r.name }}</td>
+        <td><code>{{ r.match_key }}</code></td>
+        <td>{{ r.daily_limit_minutes }} 分钟</td>
+        <td>{{ r.questions_per_session }} 题</td>
+        <td>{% if r.enabled %}<span class="badge badge-ok">启用</span>{% else %}<span class="badge badge-muted">停用</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted center">暂无规则。设备首次注册时会自动创建默认规则。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

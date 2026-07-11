@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>500 · FamilySafety</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body class="error-page">
+  <div class="error-card">
+    <div class="error-code">500</div>
+    <h1>{{ t("error.500.title") }}</h1>
+    <p>{{ t("error.500.body") }}</p>
+    <p class="muted small">请求 ID：<code>{{ request_id or 'unknown' }}</code></p>
+    <div class="error-actions">
+      <a href="/web/dashboard" class="btn btn-primary">返回首页</a>
+    </div>
+  </div>
+</body>
+</html>

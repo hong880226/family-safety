@@ -1,0 +1,72 @@
+{% extends "_layout.html" %}
+{% block heading %}概览{% endblock %}
+{% set active = 'dashboard' %}
+{% block content %}
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">今日已用</div>
+    <div class="kpi-value">{{ summary.today_minutes }} <span class="kpi-unit">分钟</span></div>
+    <div class="kpi-bar"><div class="kpi-bar-fill" style="width: {{ summary.used_vs_limit_percent }}%"></div></div>
+    <div class="kpi-sub muted">{{ summary.used_vs_limit_percent|round(0) }}% / {{ summary.daily_limit }} 分钟</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">本周累计</div>
+    <div class="kpi-value">{{ summary.week_minutes }} <span class="kpi-unit">分钟</span></div>
+    <div class="kpi-sub muted">较上周 {{ summary.week_delta|default(0) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">本周超时</div>
+    <div class="kpi-value">{{ summary.overtime_count_this_week }}</div>
+    <div class="kpi-sub muted">次</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">最近答题</div>
+    <div class="kpi-value muted">{{ summary.last_quiz_at or '—' }}</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <h3 class="panel-title">今日 Top 应用</h3>
+    <table class="table">
+      <thead><tr><th>应用</th><th class="right">分钟</th><th></th></tr></thead>
+      <tbody>
+        {% for app in summary.top_apps %}
+        <tr>
+          <td>{{ app.name }}</td>
+          <td class="right">{{ app.minutes }}</td>
+          <td class="bar-cell"><div class="bar" style="width: {{ app.percent }}%"></div></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="muted center">今天还没有数据</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h3 class="panel-title">内容分类</h3>
+    <div class="category-bars">
+      {% for cat, mins in summary.category_breakdown.items() %}
+      <div class="cat-row">
+        <span class="cat-label">{{ cat }}</span>
+        <div class="cat-bar"><div class="cat-bar-fill" style="width: {{ summary.category_pct[cat] }}%"></div></div>
+        <span class="cat-val">{{ mins }} 分钟</span>
+      </div>
+      {% else %}
+      <p class="muted">暂无数据</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h3 class="panel-title">本周答题表现</h3>
+  {% if summary.quiz_summary %}
+    <p>共 {{ summary.quiz_summary.count }} 次答题，{{ summary.quiz_summary.questions }} 道题，平均正确率 {{ summary.quiz_summary.accuracy }}%</p>
+    <p class="muted">继续努力！</p>
+  {% else %}
+    <p class="muted">本周还没有答题记录</p>
+  {% endif %}
+</div>
+{% endblock %}

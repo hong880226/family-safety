@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 · FamilySafety</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body class="error-page">
+  <div class="error-card">
+    <div class="error-code">404</div>
+    <h1>{{ t("error.404.title") }}</h1>
+    <p class="muted">{{ t("error.404.body") }}</p>
+    <p class="muted small">路径：<code>{{ path or "" }}</code></p>
+    <div class="error-actions">
+      <a href="/web/dashboard" class="btn btn-primary">返回首页</a>
+      <a href="/web/login" class="btn btn-ghost">重新登录</a>
+    </div>
+  </div>
+</body>
+</html>

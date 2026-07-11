@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 · FamilySafety</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-mark"></div>
+      <h1>FamilySafety</h1>
+      <p class="auth-subtitle">家长控制中心</p>
+    </div>
+    <form method="post" action="/web/login" class="auth-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+      <label class="field">
+        <span>用户名</span>
+        <input type="text" name="username" required autofocus />
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input type="password" name="password" required />
+      </label>
+      {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary btn-block">登录</button>
+    </form>
+    <p class="auth-hint">首次安装后默认账号：家长用户名（创建家庭时设定）</p>
+  </div>
+</body>
+</html>
