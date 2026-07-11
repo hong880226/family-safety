@@ -65,6 +65,12 @@
     else if (minVal !== null && v !== "" && Number(v) < +minVal) err = "不能小于 " + minVal;
     else if (maxVal !== null && v !== "" && Number(v) > +maxVal) err = "不能大于 " + maxVal;
     else if (input.pattern && v && !new RegExp("^" + input.pattern + "$").test(v)) err = "格式不正确";
+    // Cross-field check: confirm_password must match new_password.
+    if (!err && input.name === "confirm_password") {
+      const root = input.form || field.closest("form");
+      const other = root && root.querySelector('input[name="new_password"]');
+      if (other && other.value && v !== other.value) err = "两次密码不一致";
+    }
     const errEl = field.querySelector(".field-error");
     if (err) {
       field.classList.add("is-invalid");
@@ -79,6 +85,14 @@
   document.addEventListener("input", function (e) {
     const field = e.target.closest(".field");
     if (field) validateField(field);
+    // Re-validate the confirm-password field when the user types in new_password.
+    if (e.target.name === "new_password") {
+      const cp = e.target.form && e.target.form.querySelector('input[name="confirm_password"]');
+      if (cp) {
+        const cf = cp.closest(".field");
+        if (cf) validateField(cf);
+      }
+    }
   }, true);
 
   document.addEventListener("submit", function (e) {

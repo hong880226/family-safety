@@ -1,10 +1,23 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="csrf-token" content="{{ csrf_token or '' }}" />
   <title>登录 · FamilySafety</title>
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>html { background: #0d1117; }</style>
+  <script defer>
+    // Anti-FOUC theme bootstrap (matches _layout.html behavior).
+    (function () {
+      const saved = localStorage.getItem('fs-theme');
+      const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      const theme = saved || (prefersLight ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <script src="/static/js/app.js" defer></script>
 </head>
 <body class="auth-page">
   <div class="auth-card">
@@ -13,22 +26,24 @@
       <h1>FamilySafety</h1>
       <p class="auth-subtitle">家长控制中心</p>
     </div>
-    <form method="post" action="/web/login" class="auth-form">
+    <form method="post" action="/web/login" class="auth-form" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
       <label class="field">
         <span>用户名</span>
-        <input type="text" name="username" required autofocus />
+        <input type="text" name="username" required minlength="2" maxlength="64" autofocus />
+        <div class="field-error"></div>
       </label>
       <label class="field">
         <span>密码</span>
-        <input type="password" name="password" required />
+        <input type="password" name="password" required minlength="1" maxlength="128" autocomplete="current-password" />
+        <div class="field-error"></div>
       </label>
       {% if error %}
       <div class="alert alert-error">{{ error }}</div>
       {% endif %}
       <button type="submit" class="btn btn-primary btn-block">登录</button>
     </form>
-    <p class="auth-hint">首次安装后默认账号：家长用户名（创建家庭时设定）</p>
+    <p class="auth-hint">首次安装后默认账号:在创建家庭时设定的家长用户名。</p>
   </div>
 </body>
 </html>
