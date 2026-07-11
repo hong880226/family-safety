@@ -102,6 +102,41 @@ async def register(req: RegisterRequest, request: Request, db: AsyncSession = De
         except Exception:
             family = None
 
+    # Case 2b (PR-F): no device_id, no usable family_setup_token, but the agent
+    # did send a windows_username. If exactly one existing CHILD member has
+    # that exact username, treat that family as the rejoin target so the user
+    # doesn't get silently dropped into a brand-new family and orphaned from
+    # their existing web account (the tray "重新注册设备" path hits this).
+    family_was_rejoined = False
+    if family is None and req.windows_username:
+        ws = req.windows_username
+        stmt = select(Member).where(
+            Member.windows_username == ws,
+            Member.role == MemberRole.CHILD,
+        )
+        matches = list((await db.execute(stmt)).scalars())
+        if len(matches) >= 2:
+            # Same windows_username in multiple families. windows_username is
+            # scoped per-OS-user so this should be rare, but we must refuse
+            # rather than guess — wrong family = orphan. The parent re-links
+            # via the installer's family-id prompt, which carries the setup_token.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "windows_username matches multiple families; please re-link "
+                    "this device using the family setup token from the installer."
+                ),
+            )
+        if len(matches) == 1:
+            rejoined = matches[0]
+            family = await db.get(Family, rejoined.family_id)
+            if family is not None:
+                family_was_rejoined = True
+                logger.info(
+                    "[register] rejoin-by-windows-username family={} child={}",
+                    family.id, rejoined.id,
+                )
+
     family_was_created = False
     if family is None:
         # Create new family with a default parent. Parent gets a random
@@ -196,9 +231,13 @@ async def register(req: RegisterRequest, request: Request, db: AsyncSession = De
     await db.refresh(device)
 
     msg = (
-        f"Registered new device. Family #{family.id} created."
-        if not req.family_setup_token
-        else f"Joined family #{family.id}."
+        "Rejoined existing family by windows_username; new device row created."
+        if family_was_rejoined
+        else (
+            f"Registered new device. Family #{family.id} created."
+            if not req.family_setup_token
+            else f"Joined family #{family.id}."
+        )
     )
 
     return RegisterResponse(

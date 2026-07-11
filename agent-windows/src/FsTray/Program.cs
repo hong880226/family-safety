@@ -1,3 +1,6 @@
+// PR-F reregister fix: tested by static review only — to be built by CI.
+// No dotnet SDK on the dev workstation; the diff is hand-verified for
+// namespace FsTray, file-scoped namespace, no new types, log-only additions.
 using FsCommon;
 
 namespace FsTray;
@@ -43,7 +46,15 @@ public sealed class TrayApp : ApplicationContext
         menu.Items.Add("FamilySafety 家长控制", null, (s, e) => OpenDashboard());
         menu.Items.Add("打开家长配置面板", null, (s, e) => OpenConfigUI());
         menu.Items.Add("---");
-        menu.Items.Add("重新注册设备", null, (s, e) => Reregister());
+        // PR-F: surface current bind state next to the menu item so the parent
+        // can see at a glance whether 重新注册设备 is a no-op. The full re-bind
+        // flow (family id prompt) lives in FsConfigUI; the tray shortcut only
+        // clears the local device creds and lets the watchdog restart FsAgent.
+        var snapshot = AgentConfig.Load();
+        var bindSuffix = string.IsNullOrEmpty(snapshot.ApiKey) && string.IsNullOrEmpty(snapshot.DeviceId)
+            ? "(未绑定)"
+            : "(已绑定)";
+        menu.Items.Add($"重新注册设备 {bindSuffix}", null, (s, e) => Reregister());
         menu.Items.Add("---");
         menu.Items.Add("退出 (家长)", null, (s, e) => RequestExitWithAuth());
         _tray.ContextMenuStrip = menu;
@@ -115,11 +126,30 @@ public sealed class TrayApp : ApplicationContext
 
     private void Reregister()
     {
+        // PR-F: detect the empty-cfg case BEFORE wiping, and be honest about
+        // what clearing the keys actually does. We do not restart FsAgent
+        // ourselves: that needs admin rights and the watchdog already owns
+        // the restart loop (it picks up the missing keys on its next
+        // heartbeat-stale check after ~30s).
         var cfg = AgentConfig.Load();
+        if (string.IsNullOrEmpty(cfg.ApiKey) && string.IsNullOrEmpty(cfg.DeviceId))
+        {
+            AuditAuth("tray-reregister", "noop (cfg already empty)");
+            MessageBox.Show("当前设备凭据已是空,无需清除。",
+                "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var prevApiKey = cfg.ApiKey;
+        var prevDeviceId = cfg.DeviceId;
         cfg.ApiKey = "";
         cfg.DeviceId = "";
         cfg.Save();
-        MessageBox.Show("已清除 API Key。下次重启 FsAgent 时将自动重新注册。");
+        AuditAuth("tray-reregister",
+            $"cleared (prev_apikey_prefix={(prevApiKey.Length >= 8 ? prevApiKey[..8] : prevApiKey)}, "
+            + $"prev_device_id={prevDeviceId})");
+        MessageBox.Show(
+            "已清除设备凭据。FsWatchdog 将在检测到心跳超时(约30s)后重启 FsAgent 完成重新注册。",
+            "FamilySafety", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void RequestExitWithAuth()
@@ -198,13 +228,15 @@ public sealed class TrayApp : ApplicationContext
         ExitThread();
     }
 
-    private static void AuditAuth(string detail)
+    private static void AuditAuth(string detail) => AuditAuth("tray-exit", detail);
+
+    private static void AuditAuth(string tag, string detail)
     {
         try
         {
             var dir = Path.Combine(AgentConfig.ConfigDir, "logs");
             Directory.CreateDirectory(dir);
-            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [tray-exit] {detail}{Environment.NewLine}";
+            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{tag}] {detail}{Environment.NewLine}";
             File.AppendAllText(Path.Combine(dir, AuthLogName), line, System.Text.Encoding.UTF8);
         }
         catch { /* ignore */ }
