@@ -1,14 +1,54 @@
 using FsCommon;
-using System.Diagnostics;
 
 namespace FsMonitor;
 
 /// <summary>
-/// ForegroundTracker: polls the active foreground window every second
-/// and emits a UsageRecordIn whenever the app or window title changes.
-/// Designed to be called from the FsMonitor main loop.
-///
-/// All Win32 access goes through WinApi.GetForegroundInfo().
+/// Win32 helpers used by FsMonitor — wrapped here so the rest of the
+/// codebase doesn't need System.Runtime.InteropServices imports.
+/// </summary>
+public static class WinApi
+{
+    public static (string App, string Title) GetForegroundInfo()
+    {
+        try
+        {
+            var hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero) return ("", "");
+            var title = GetWindowText(hwnd);
+            GetWindowThreadProcessId(hwnd, out uint pid);
+            var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+            var appName = proc.ProcessName + ".exe";
+            proc.Dispose();
+            return (appName, title ?? "");
+        }
+        catch
+        {
+            return ("", "");
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    private static string? GetWindowText(IntPtr hWnd)
+    {
+        var sb = new System.Text.StringBuilder(512);
+        GetWindowText(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+}
+
+/// <summary>
+/// Foreground window activity tracker. Polled by FsMonitor.Main once a
+/// second; emits a UsageRecordIn whenever the active app or window title
+/// changes. Maintains the open slice in memory so the caller can flush on
+/// shutdown.
 /// </summary>
 internal sealed class ForegroundTracker
 {
@@ -19,8 +59,6 @@ internal sealed class ForegroundTracker
     private string _lastTitle = "";
     private DateTime _lastStart = DateTime.UtcNow;
 
-    /// <param name="cfg">Loaded agent config (used for tagging records with family_id etc).</param>
-    /// <param name="emit">Callback invoked for each completed (previous) usage slice.</param>
     public ForegroundTracker(AgentConfig cfg, Action<UsageRecordIn> emit)
     {
         _cfg = cfg ?? throw new ArgumentNullException(nameof(cfg));
@@ -29,7 +67,7 @@ internal sealed class ForegroundTracker
 
     /// <summary>
     /// Call once per main-loop tick. Detects app/title transitions and
-    /// emits a record for the *previous* slice before resetting.
+    /// emits a record for the *previous* slice before resetting state.
     /// </summary>
     public void Tick()
     {
@@ -40,7 +78,6 @@ internal sealed class ForegroundTracker
         var dur = (int)(now - _lastStart).TotalSeconds;
         if (dur > 0 && !string.IsNullOrEmpty(_lastApp))
         {
-            // Overtime is decided by FsAgent/parent; v0.1 defaults to false.
             _emit(new UsageRecordIn
             {
                 AppName = _lastApp,
@@ -57,7 +94,7 @@ internal sealed class ForegroundTracker
     }
 
     /// <summary>
-    /// Flush whatever slice is currently open (called on shutdown).
+    /// Flush whatever slice is currently open (call on shutdown).
     /// </summary>
     public void Flush()
     {
