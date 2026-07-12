@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import current_member, require_parent, require_parent_or_redirect
 from app.db.session import get_db
@@ -292,7 +293,7 @@ async def members_page(
 @router.post("/members")
 async def members_add(
     request: Request,
-    form: MemberForm = Depends(),
+    form: MemberForm = Depends(MemberForm.as_form),
     member: Member = Depends(require_parent_or_redirect),
     db: AsyncSession = Depends(get_db),
 ):
@@ -337,7 +338,7 @@ async def members_edit_get(
 async def members_edit_post(
     member_id: int,
     request: Request,
-    form: MemberForm = Depends(),
+    form: MemberForm = Depends(MemberForm.as_form),
     parent: Member = Depends(require_parent_or_redirect),
     db: AsyncSession = Depends(get_db),
 ):
@@ -472,6 +473,7 @@ async def rule_edit_get(
         select(Rule)
         .join(Member, Rule.member_id == Member.id)
         .where(Rule.id == rule_id, Member.family_id == parent.family_id)
+        .options(selectinload(Rule.time_windows))
     )
     rule = (await db.execute(stmt)).scalar_one_or_none()
     if rule is None:
@@ -506,6 +508,7 @@ async def rule_edit_post(
         select(Rule)
         .join(Member, Rule.member_id == Member.id)
         .where(Rule.id == rule_id, Member.family_id == parent.family_id)
+        .options(selectinload(Rule.time_windows))
     )
     rule = (await db.execute(stmt)).scalar_one_or_none()
     if rule is None:
@@ -604,7 +607,7 @@ async def quiz_config_page(
 @router.post("/quiz-config")
 async def quiz_config_save(
     request: Request,
-    form: QuizConfigForm = Depends(),
+    form: QuizConfigForm = Depends(QuizConfigForm.as_form),
     parent: Member = Depends(require_parent_or_redirect),
     db: AsyncSession = Depends(get_db),
 ):
@@ -706,7 +709,7 @@ async def content_rules_page(
 @router.post("/content-rules")
 async def content_rules_add(
     request: Request,
-    form: ContentRuleForm = Depends(),
+    form: ContentRuleForm = Depends(ContentRuleForm.as_form),
     member: Member = Depends(require_parent_or_redirect),
     db: AsyncSession = Depends(get_db),
 ):
@@ -839,7 +842,7 @@ async def settings_page(
 @router.post("/settings")
 async def settings_save(
     request: Request,
-    form: SettingsForm = Depends(),
+    form: SettingsForm = Depends(SettingsForm.as_form),
     member: Member = Depends(require_parent_or_redirect),
     db: AsyncSession = Depends(get_db),
 ):
